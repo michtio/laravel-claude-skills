@@ -1,0 +1,15 @@
+# OS and editor
+.DS_Store
+*.log
+*.tmp
+
+# Dependencies and caches
+/vendor/
+/node_modules/
+__pycache__/
+*.pyc
+.phpunit.cache/
+.phpunit.result.cache
+
+# Specs and research for unreleased work (internal)
+internal-docs/
