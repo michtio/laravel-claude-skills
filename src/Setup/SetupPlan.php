@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Michtio\LaravelClaudeSkills\Setup;
 
+use Michtio\LaravelClaudeSkills\Setup\Planners\HooksPathPlanner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\Planner;
 
 /**
@@ -37,6 +38,7 @@ final class SetupPlan
      * @param list<string> $notices Lines shown before the diffs that change nothing on disk.
      * @param array<string, string> $settled Path => fingerprint for owned files that need no change.
      * @param array<string, string> $previous Path => fingerprint the state recorded before this run.
+     * @param list<PlannedAction> $actions Changes that are not file writes, run after the files.
      * @author michtio
      */
     public function __construct(
@@ -44,6 +46,7 @@ final class SetupPlan
         public readonly array $notices = [],
         public readonly array $settled = [],
         public readonly array $previous = [],
+        public readonly array $actions = [],
     ) {
     }
 
@@ -51,10 +54,11 @@ final class SetupPlan
      * Build the plan for a project from its planners and recorded state.
      *
      * @param list<Planner> $planners
+     * @param list<HooksPathPlanner> $actionPlanners
      * @throws SetupException When a planner refuses the project's current state.
      * @author michtio
      */
-    public static function build(Project $project, array $planners): self
+    public static function build(Project $project, array $planners, array $actionPlanners = []): self
     {
         $state = SetupState::load($project->root);
         $settled = [];
@@ -83,6 +87,12 @@ final class SetupPlan
             }
 
             if ($file->current !== null && self::normalise($file->current) === self::normalise($file->desired)) {
+                if ($file->executable && ! $file->currentExecutable) {
+                    $changes[] = new FileChange($file->path, $file->current, $file->current, false, ['the executable bit is missing: '.$file->path.' (restored on apply)'], $file->desiredFingerprint, true);
+
+                    continue;
+                }
+
                 $settled[$file->path] = (string) $file->desiredFingerprint;
 
                 continue;
@@ -95,7 +105,7 @@ final class SetupPlan
                 $file->current !== null && $file->foreignNote !== null => [$file->path.': '.$file->foreignNote],
                 default => [],
             };
-            $changes[] = new FileChange($file->path, $file->current, $file->desired, $handEdited, $notes, $file->desiredFingerprint);
+            $changes[] = new FileChange($file->path, $file->current, $file->desired, $handEdited, $notes, $file->desiredFingerprint, $file->executable);
         }
 
         $plan = new self($changes, $notices, $settled, $state->files);
@@ -106,7 +116,18 @@ final class SetupPlan
             $changes[] = new FileChange(SetupState::PATH, $currentState, $stateFile);
         }
 
-        return new self($changes, $notices, $settled, $state->files);
+        $actions = [];
+
+        foreach ($actionPlanners as $actionPlanner) {
+            [$action, $lines] = $actionPlanner->plan($project);
+            array_push($notices, ...$lines);
+
+            if ($action !== null) {
+                $actions[] = $action;
+            }
+        }
+
+        return new self($changes, $notices, $settled, $state->files, $actions);
     }
 
     /**
@@ -116,7 +137,7 @@ final class SetupPlan
      */
     public function isEmpty(): bool
     {
-        return $this->changes === [];
+        return $this->changes === [] && $this->actions === [];
     }
 
     /**
@@ -178,6 +199,10 @@ final class SetupPlan
 
         if ($previous !== null) {
             return $file->currentFingerprint !== $previous;
+        }
+
+        if ($file->unrecordedEdit !== null) {
+            return $file->unrecordedEdit;
         }
 
         return $file->unrecordedIsHandEdit

@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Michtio\LaravelClaudeSkills\Setup\Planners;
 
+use Michtio\LaravelClaudeSkills\Setup\JsonFile;
 use Michtio\LaravelClaudeSkills\Setup\PlannedFile;
 use Michtio\LaravelClaudeSkills\Setup\Project;
 use Michtio\LaravelClaudeSkills\Setup\SetupException;
-use Michtio\LaravelClaudeSkills\Setup\SetupState;
 use stdClass;
 
 /**
@@ -77,7 +77,7 @@ final class McpPlanner implements Planner
             $entry->command = $wanted['command'];
             $entry->args = $wanted['args'];
             $config->mcpServers->{self::SERVER} = $entry;
-            $desired = $this->encode($config, $this->indentation($current));
+            $desired = JsonFile::encode($config, $current);
         }
 
         return new PlannedFile(
@@ -97,29 +97,14 @@ final class McpPlanner implements Planner
     // =========================================================================
 
     /**
-     * Decode .mcp.json into objects (so empty objects survive a rewrite), or start an empty one.
+     * Decode .mcp.json, with an mcpServers object (created when absent).
      *
      * @throws SetupException When the file is not a JSON object with an mcpServers object.
      * @author michtio
      */
     private function decode(?string $content): stdClass
     {
-        if ($content === null || trim($content) === '') {
-            $config = new stdClass();
-            $config->mcpServers = new stdClass();
-
-            return $config;
-        }
-
-        $config = json_decode($content);
-
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            throw new SetupException(self::PATH.' is not valid JSON ('.json_last_error_msg().'). Fix it by hand and run the setup again; nothing was written.');
-        }
-
-        if (! $config instanceof stdClass) {
-            throw new SetupException(self::PATH.' is not a JSON object. Fix it by hand and run the setup again; nothing was written.');
-        }
+        $config = JsonFile::decode(self::PATH, $content);
 
         if (! isset($config->mcpServers)) {
             $config->mcpServers = new stdClass();
@@ -140,7 +125,7 @@ final class McpPlanner implements Planner
      */
     private function fingerprint(array $entry): string
     {
-        return SetupState::fingerprint((string) json_encode($entry, JSON_UNESCAPED_SLASHES));
+        return JsonFile::fingerprint($entry);
     }
 
     /**
@@ -170,39 +155,5 @@ final class McpPlanner implements Planner
         $runsArtisan = basename(str_replace('\\', '/', $args[$count - 2])) === 'artisan';
 
         return $runsArtisan && (str_starts_with($command, 'php') || $command === 'wsl.exe' || $command === 'sail');
-    }
-
-    /**
-     * The indentation unit of an existing JSON file (the first indented line), four spaces by default.
-     *
-     * @author michtio
-     */
-    private function indentation(?string $content): string
-    {
-        if ($content !== null && preg_match('/^([ \t]+)"/m', str_replace("\r\n", "\n", $content), $match) === 1) {
-            return $match[1];
-        }
-
-        return '    ';
-    }
-
-    /**
-     * Encode the configuration as Boost does (pretty, slashes and Unicode unescaped) with the given indentation.
-     *
-     * @author michtio
-     */
-    private function encode(stdClass $config, string $indent): string
-    {
-        $json = (string) json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-
-        if ($indent !== '    ') {
-            $json = (string) preg_replace_callback(
-                '/^(?: {4})+/m',
-                static fn (array $match): string => str_repeat($indent, intdiv(strlen($match[0]), 4)),
-                $json,
-            );
-        }
-
-        return $json."\n";
     }
 }

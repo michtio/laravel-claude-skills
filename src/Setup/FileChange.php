@@ -23,6 +23,7 @@ final class FileChange
      * @param bool $handEdited Whether the file differs from what the setup wrote last.
      * @param list<string> $notes Extra lines shown above the diff.
      * @param string|null $fingerprint Fingerprint of the owned part as written, recorded in the state once written.
+     * @param bool $executable Whether the written file gets the executable bits.
      * @author michtio
      */
     public function __construct(
@@ -32,6 +33,7 @@ final class FileChange
         public readonly bool $handEdited = false,
         public readonly array $notes = [],
         public readonly ?string $fingerprint = null,
+        public readonly bool $executable = false,
     ) {
     }
 }
