@@ -1,7 +1,7 @@
 ---
 name: laravel-planner
 description: Fixture agent.
-disallowedTools: Write, Edit, NotebookEdit
+disallowedTools: Write, Edit, NotebookEdit, mcp__laravel-boost__record-rule
 model: opus
 ---
 

@@ -14,8 +14,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent.parent
 FIX = "evals/fixtures"
 
-BUDGET = ["python3", "bin/agent_budget.py"]
-VALIDATE = ["bash", "bin/validate-skills.sh"]
+BUDGET = ["python3", "scripts/agent_budget.py"]
+VALIDATE = ["bash", "scripts/validate-skills.sh"]
 
 # fixture -> (command, message substrings the output must contain)
 BAD = {
@@ -24,6 +24,7 @@ BAD = {
     "agent-gate-writer-with-agent": (BUDGET, ["must not have the Agent tool"]),
     "agent-cap-6": (BUDGET, ["cap above 5"]),
     "agent-readonly-tinker": (BUDGET, ["must disallow mcp__laravel-boost__tinker"]),
+    "agent-readonly-record-rule": (BUDGET, ["must disallow mcp__laravel-boost__record-rule"]),
     "skill-body-over-12kb": (VALIDATE, ["SKILL.md body is", "max 12288"]),
     "skill-listing-over-1300": (VALIDATE, ["description + when_to_use is", "max 1300"]),
 }
@@ -66,21 +67,21 @@ class FixtureSelfTests(unittest.TestCase):
 
 class PackageQualityGate(unittest.TestCase):
     def test_check_sh_passes_on_the_repo(self):
-        r = run(["sh", "bin/check.sh"], timeout=600)
+        r = run(["sh", "scripts/check.sh"], timeout=600)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
     def test_check_sh_has_a_self_test_for_every_bad_fixture(self):
-        text = (REPO / "bin/check.sh").read_text(encoding="utf-8")
+        text = (REPO / "scripts/check.sh").read_text(encoding="utf-8")
         lines = text.splitlines()
         for name in BAD:
             with self.subTest(fixture=name):
                 hit = [l for l in lines if l.lstrip().startswith("must_fail") and f"{FIX}/{name}" in l]
-                self.assertTrue(hit, f"bin/check.sh has no must_fail line for {FIX}/{name}")
+                self.assertTrue(hit, f"scripts/check.sh has no must_fail line for {FIX}/{name}")
 
     def test_check_sh_gates_the_valid_fixture(self):
-        text = (REPO / "bin/check.sh").read_text(encoding="utf-8")
+        text = (REPO / "scripts/check.sh").read_text(encoding="utf-8")
         hit = [l for l in text.splitlines() if l.lstrip().startswith("gate") and f"{FIX}/valid" in l]
-        self.assertTrue(hit, "bin/check.sh must run a gate on evals/fixtures/valid")
+        self.assertTrue(hit, "scripts/check.sh must run a gate on evals/fixtures/valid")
 
 
 class PackageSkeleton(unittest.TestCase):
@@ -103,6 +104,9 @@ class PackageSkeleton(unittest.TestCase):
         data = self.load(".claude-plugin/marketplace.json")
         self.assertIsInstance(data, dict)
 
+    def test_no_bin_directory_at_the_root(self):
+        self.assertFalse((REPO / "bin").exists(), "a root bin/ goes on PATH and claude.ai refuses it; tooling lives in scripts/")
+
     def test_composer_json(self):
         data = self.load("composer.json")
         self.assertEqual(data.get("name"), "michtio/laravel-claude-skills")
@@ -120,7 +124,7 @@ class PackageSkeleton(unittest.TestCase):
         p = REPO / ".github/workflows/ci.yml"
         self.assertTrue(p.is_file(), ".github/workflows/ci.yml is missing")
         text = p.read_text(encoding="utf-8")
-        self.assertIn("bin/check.sh", text)
+        self.assertIn("scripts/check.sh", text)
         self.assertIn("python3 -m unittest discover -s tests/gate", text)
         for action in ("actions/checkout", "actions/setup-python"):
             uses = re.findall(rf"uses:\s*{re.escape(action)}@(\S+)", text)

@@ -4,7 +4,7 @@
 #   bash tests/gate/fixture-app.sh
 #
 # Assumes fixtures/app: a Laravel app with Boost and its own .ddev (PHP 8.4), requiring this
-# package through a Composer path repository. Only ddev commands run; nothing on the host.
+# package through a Composer path repository. Only ddev commands run, from inside the app (ddev has no --dir project flag); nothing on the host.
 # BOOST_CMD overrides the install command, for example:
 #   BOOST_CMD="php artisan boost:update --no-discover --no-interaction" bash tests/gate/fixture-app.sh
 
@@ -23,13 +23,14 @@ fail() {
 command -v ddev >/dev/null 2>&1 || fail "ddev is not installed"
 [ -f "$app/.ddev/config.yaml" ] || fail "fixtures/app/.ddev/config.yaml is missing (no fixture app with its own DDEV project)"
 
-ddev start --skip-hooks --dir "$app" >/dev/null 2>&1 || ddev start --dir "$app" || fail "ddev start failed in fixtures/app"
+cd "$app" || fail "fixtures/app is missing"
+ddev start >/dev/null 2>&1 || fail "ddev start failed in fixtures/app"
 
 # Remove any earlier output so the assertion proves this run wrote it.
 rm -rf "$app/.claude/skills/laravel-pitfalls"
 
 echo "running in DDEV: $boost_cmd"
-ddev exec --dir /var/www/html bash -c "$boost_cmd" || fail "Boost command failed: $boost_cmd"
+ddev exec bash -c "$boost_cmd" || fail "Boost command failed: $boost_cmd"
 
 [ -s "$skill" ] || fail "fixtures/app/.claude/skills/laravel-pitfalls/SKILL.md was not written (or is empty)"
 
