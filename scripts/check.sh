@@ -9,7 +9,8 @@
 # one line; the run fails if any fails):
 #   frontmatter    scripts/validate-skills.sh (YAML, name, description, listing cap, 12 KB body)
 #   agent-budget   scripts/agent_budget.py (48 KB startup, checker 16 KB, agent caps <= 5,
-#                  no Agent on checkers or the gate writer, tinker, record-rule and
+#                  no Agent on checkers or the gate writer, none on a plain planner or
+#                  reviewer (the deep reviewer orchestrates under its cap line), tinker, record-rule and
 #                  write tools disallowed on read-only agents, no xhigh reviewers)
 #   gap lines      scripts/check_pitfalls.py (every laravel-pitfalls reference carries
 #                  "Gap: not covered by Boost" or "Gap: covered partly by Boost (<rule>)")
@@ -92,6 +93,13 @@ must_fail "agent self-test (planner inherits Agent)" "must disallow Agent" pytho
 must_fail "agent self-test (no frontmatter)" "no frontmatter" python3 scripts/agent_budget.py --root evals/fixtures/agent-no-frontmatter
 must_fail "agent self-test (checker by name: field)" "must not have the Agent tool" python3 scripts/agent_budget.py --root evals/fixtures/agent-name-field-checker
 must_fail "agent self-test (quoted effort xhigh on a reviewer)" "reviewer agents use effort high, not xhigh" python3 scripts/agent_budget.py --root evals/fixtures/reviewer-effort-xhigh-quoted
+must_fail "agent self-test (deep reviewer inherits Agent, no cap line)" "Agent tool without an 'At most N agents per run|review' line" python3 scripts/agent_budget.py --root evals/fixtures/agent-reviewer-deep-no-cap
+must_fail "agent self-test (deep reviewer, cap 6)" "cap above 5" python3 scripts/agent_budget.py --root evals/fixtures/agent-reviewer-deep-cap-6
+must_fail "agent self-test (plain reviewer with a cap line still inherits Agent)" "must disallow Agent" python3 scripts/agent_budget.py --root evals/fixtures/agent-reviewer-with-cap-line
+must_fail "agent self-test (another *-reviewer-deep name is not exempt)" "must disallow Agent" python3 scripts/agent_budget.py --root evals/fixtures/agent-other-reviewer-deep
+must_fail "agent self-test (debugger inherits Agent, no cap line)" "Agent tool without an 'At most N agents per run|review' line" python3 scripts/agent_budget.py --root evals/fixtures/agent-debugger-with-agent
+gate      "agent rules pass on evals/fixtures/agent-reviewer-deep-orchestrator (cap 5)" python3 scripts/agent_budget.py --root evals/fixtures/agent-reviewer-deep-orchestrator
+gate      "agent rules pass on evals/fixtures/agent-debugger-valid (cap 0)" python3 scripts/agent_budget.py --root evals/fixtures/agent-debugger-valid
 must_fail "skill self-test (body over 12 KB)" "max 12288" bash scripts/validate-skills.sh --root evals/fixtures/skill-body-over-12kb
 must_fail "skill self-test (listing over 1300)" "max 1300" bash scripts/validate-skills.sh --root evals/fixtures/skill-listing-over-1300
 must_fail "symbol self-test (missing facade method)" "Illuminate\\Support\\Facades\\DB::transactional() not found" python3 scripts/laravel_source.py check evals/fixtures/symbol-missing-method
