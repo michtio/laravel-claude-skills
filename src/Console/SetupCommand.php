@@ -6,6 +6,8 @@ namespace Michtio\LaravelClaudeSkills\Console;
 
 use Illuminate\Console\Command;
 use Michtio\LaravelClaudeSkills\Setup\FileChange;
+use Michtio\LaravelClaudeSkills\Setup\PathGuard;
+use Michtio\LaravelClaudeSkills\Setup\PlannedFile;
 use Michtio\LaravelClaudeSkills\Setup\Planners\CoreOverridePlanner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\McpPlanner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\Planner;
@@ -13,6 +15,7 @@ use Michtio\LaravelClaudeSkills\Setup\Planners\RunnerGuidelinePlanner;
 use Michtio\LaravelClaudeSkills\Setup\Project;
 use Michtio\LaravelClaudeSkills\Setup\SetupException;
 use Michtio\LaravelClaudeSkills\Setup\SetupPlan;
+use Michtio\LaravelClaudeSkills\Setup\SetupState;
 use Michtio\LaravelClaudeSkills\Setup\UnifiedDiff;
 use Symfony\Component\Console\Formatter\OutputFormatter;
 
@@ -35,6 +38,19 @@ use Symfony\Component\Console\Formatter\OutputFormatter;
  */
 final class SetupCommand extends Command
 {
+    // Constants
+    // =========================================================================
+
+    /**
+     * Every path the setup reads and writes as its own, checked for symlinks first.
+     */
+    private const OWNED_PATHS = [
+        McpPlanner::PATH,
+        RunnerGuidelinePlanner::PATH,
+        CoreOverridePlanner::PATH,
+        SetupState::PATH,
+    ];
+
     // Properties
     // =========================================================================
 
@@ -79,6 +95,7 @@ final class SetupCommand extends Command
         $this->line('Runner: '.$project->runner->value);
 
         try {
+            PathGuard::assertAllSafe($root, self::OWNED_PATHS);
             $plan = SetupPlan::build($project, $this->planners());
         } catch (SetupException $exception) {
             $this->error($exception->getMessage());
@@ -115,17 +132,7 @@ final class SetupCommand extends Command
             return self::SUCCESS;
         }
 
-        foreach ($plan->changes as $change) {
-            if (! $this->apply($root, $change)) {
-                $this->error('Could not write '.$change->path.'; the files listed above it were applied.');
-
-                return self::FAILURE;
-            }
-        }
-
-        $this->info('Applied: '.$summary.'.');
-
-        return self::SUCCESS;
+        return $this->applyPlan($root, $plan) ? self::SUCCESS : self::FAILURE;
     }
 
     // Private Methods
@@ -179,7 +186,7 @@ final class SetupCommand extends Command
         }
 
         foreach ($change->notes as $note) {
-            $this->line($change->path.': '.$note);
+            $this->line(OutputFormatter::escape($note));
         }
 
         foreach (UnifiedDiff::render($change->path, $change->before, $change->after) as $line) {
@@ -203,6 +210,87 @@ final class SetupCommand extends Command
             str_starts_with($line, '-') => '<fg=red>'.$escaped.'</>',
             default => $escaped,
         };
+    }
+
+    /**
+     * Apply the file changes in order, then the state file for the files actually
+     * written. Each file is checked again right before it is written (no symlink,
+     * unchanged since the plan); the first refusal stops the run.
+     *
+     * @author michtio
+     */
+    private function applyPlan(string $root, SetupPlan $plan): bool
+    {
+        $written = [];
+        $stateChange = null;
+        $failure = null;
+
+        foreach ($plan->changes as $change) {
+            if ($change->path === SetupState::PATH) {
+                $stateChange = $change;
+
+                continue;
+            }
+
+            $failure = $this->refusal($root, $change);
+
+            if ($failure === null && ! $this->apply($root, $change)) {
+                $failure = 'Could not write '.$change->path.'.';
+            }
+
+            if ($failure !== null) {
+                break;
+            }
+
+            $written[] = $change->path;
+        }
+
+        // The state records only what was written, so it is written even after a refusal.
+        $state = $plan->stateAfter($written);
+        $stateBefore = $stateChange !== null ? $stateChange->before : PlannedFile::read($root, SetupState::PATH);
+        $stateRefusal = $this->refusal($root, new FileChange(SetupState::PATH, $stateBefore, $state));
+
+        if ($stateRefusal !== null) {
+            $failure ??= $stateRefusal;
+        } elseif ($stateBefore === null || SetupPlan::normalise($stateBefore) !== SetupPlan::normalise($state)) {
+            if ($this->apply($root, new FileChange(SetupState::PATH, $stateBefore, $state))) {
+                $written[] = SetupState::PATH;
+            } else {
+                $failure ??= 'Could not write '.SetupState::PATH.'.';
+            }
+        }
+
+        if ($failure !== null) {
+            $this->error($failure.' Nothing further was written.');
+
+            return false;
+        }
+
+        $count = count($written);
+        $this->info('Applied: '.($count === 1 ? '1 file' : $count.' files').'.');
+
+        return true;
+    }
+
+    /**
+     * Why a change must not be written now, or null: its path became unsafe, or the
+     * file no longer holds what the plan showed.
+     *
+     * @author michtio
+     */
+    private function refusal(string $root, FileChange $change): ?string
+    {
+        try {
+            PathGuard::assertSafe($root, $change->path);
+        } catch (SetupException $exception) {
+            return $exception->getMessage();
+        }
+
+        if (PlannedFile::read($root, $change->path) !== $change->before) {
+            return $change->path.' changed since the plan was shown; it was not written.';
+        }
+
+        return null;
     }
 
     /**

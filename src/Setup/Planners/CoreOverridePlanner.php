@@ -40,13 +40,34 @@ final class CoreOverridePlanner implements Planner
      */
     public const PATH = '.ai/guidelines/boost/core.blade.php';
 
+    /**
+     * GuidelineAssist helpers kept as Boost ships them: conditions and values that
+     * never render a command. Any other helper left in the override fails the run.
+     */
+    public const KEPT_HELPERS = [
+        'hasMcpEnabled', 'hasSkillsEnabled', 'hasCloudEnabled', 'hasPackage', 'hasComposerScript',
+        'supportsPintAgentFormatter', 'appPath', 'inertia', 'enums', 'enumContents', 'project', 'config',
+    ];
+
+    /**
+     * Host-form command text that must not survive the derivation.
+     */
+    public const HOST_FORMS = [
+        '/\bphp artisan\b/',
+        '/\bvendor\/bin\/[A-Za-z0-9._-]*/',
+        '/\bcomposer [a-z][a-z-]*/',
+        '/\bnpm [a-z][a-z-]*/',
+        '/\bnpx [a-z@][A-Za-z0-9@\/._-]*/',
+    ];
+
     // Public Methods
     // =========================================================================
 
     /**
      * Plan the core override, or its absence without DDEV.
      *
-     * @throws SetupException When the project uses DDEV and laravel/boost is not installed.
+     * @throws SetupException When the project uses DDEV and laravel/boost is not installed, or the
+     *                        derived override would still carry a host command or an unknown helper.
      * @author michtio
      */
     public function plan(Project $project): PlannedFile
@@ -57,6 +78,16 @@ final class CoreOverridePlanner implements Planner
 
         $core = BoostCore::locate($project->root);
         $desired = $this->derive($core, $project);
+        $leftovers = $this->leftovers($desired, $project);
+
+        if ($leftovers !== []) {
+            throw new SetupException(sprintf(
+                "Boost's core guideline (%s) has text the setup cannot put in the %s runner's form: %s. No override was written; nothing was written. Update this package, or report the new Boost text.",
+                $core->label(),
+                $project->runner->value,
+                implode(', ', $leftovers),
+            ));
+        }
         $current = PlannedFile::read($project->root, self::PATH);
 
         // A Boost release that leaves the core guideline unchanged is not a change:
@@ -124,14 +155,51 @@ final class CoreOverridePlanner implements Planner
         );
 
         $header = sprintf(
-            "{{-- Written by claude-skills:setup from laravel/boost %s (%s, %s). Boost's core guideline with its commands in the %s runner's form; everything else as Boost ships it. The setup refreshes this file when Boost's core guideline changes: edit it by hand only if you accept that. --}}\n",
-            $core->version,
+            "{{-- Written by claude-skills:setup from %s (%s, %s). Boost's core guideline with its commands in the %s runner's form; everything else as Boost ships it. The setup refreshes this file when Boost's core guideline changes: edit it by hand only if you accept that. --}}\n",
+            $core->label(),
             BoostCore::SOURCE,
             'sha256 '.hash('sha256', $core->content),
             $project->runner->value,
         );
 
         return $header.$content;
+    }
+
+    /**
+     * What the derived override still carries that the runner cannot run: helper calls
+     * outside the allowlist, and host-form commands outside the runner forms the
+     * derivation inserted. Empty when the override is safe to write.
+     *
+     * @return list<string>
+     * @author michtio
+     */
+    public function leftovers(string $override, Project $project): array
+    {
+        $body = $this->body($override);
+        $found = [];
+
+        if (preg_match_all('/\$assist->([A-Za-z_]+)/', $body, $calls) > 0) {
+            foreach (array_unique($calls[1]) as $method) {
+                if (! in_array($method, self::KEPT_HELPERS, true)) {
+                    $found[] = '$assist->'.$method;
+                }
+            }
+        }
+
+        // Remove the runner forms first; what is left must hold no host command.
+        $text = str_replace(
+            array_unique([$project->artisan(), $project->composer().' ', $project->npm().' ', $project->vendorBin(), 'ddev npx ', 'ddev exec php ']),
+            ' ',
+            $body,
+        );
+
+        foreach (self::HOST_FORMS as $pattern) {
+            if (preg_match_all($pattern, $text, $matches) > 0) {
+                array_push($found, ...array_unique($matches[0]));
+            }
+        }
+
+        return array_values(array_unique($found));
     }
 
     // Private Methods
