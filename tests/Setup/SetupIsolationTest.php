@@ -79,16 +79,20 @@ declare(strict_types=1);
  *    hand edit: "edited by hand: composer.json", diff shown, asked.
  *
  * 5. HOOKS AND SECRET SCAN, files (executable, mode & 0111):
- *    .githooks/commit-msg: sh script, argument = message file. Exit 1 with a
- *      message naming the trailer when a non-comment line (not starting with #)
- *      matches, case-insensitively: ^(co-authored-by|claude-session|assisted-by|
- *      generated-by):  or  generated with  (anywhere in the line). Exit 0 otherwise.
+ *    .githooks/commit-msg: sh script, argument = message file. It blocks AI
+ *      attribution only, never human collaboration (round 2 ruling). Exit 1 with a
+ *      message naming the line when a non-comment line (not starting with #)
+ *      matches, case-insensitively: a Co-Authored-By trailer (any leading
+ *      whitespace) naming an AI tool or vendor (see SetupIsolationRound2Test.php),
+ *      Generated with/by followed by an AI tool, a Claude-Session: line, the robot
+ *      emoji footer. A human Co-authored-by trailer and "generated with Faker"
+ *      exit 0. Exit 0 otherwise.
  *    .githooks/gitleaks-check: sh script. gitleaks on PATH: runs
  *      `gitleaks detect --source . --config .gitleaks.toml --no-banner`.
  *      Absent: with CI set (non-empty) exit 1, stderr "gitleaks is required in CI";
  *      without CI exit 0, output "gitleaks not found, skipping the secret scan".
  *    .gitleaks.toml: contains `useDefault = true` under [extend], an
- *      [allowlist] section, and the paths tests/Fixtures/ and .env.example.
+ *      [[allowlists]] table (current gitleaks schema), and the paths tests/Fixtures/ and .env.example.
  *    core.hooksPath: a plan action line "git config core.hooksPath .githooks"
  *      inside the same single confirmation; --yes or a yes runs it (in the project
  *      root); a no does not. Not a git repository: no action, output contains
@@ -658,7 +662,7 @@ it('writes executable hook scripts and the gitleaks config', function () {
     $toml = $this->read($dir, '.gitleaks.toml');
     expect($toml)->not->toBeNull()
         ->toContain('[extend]')->toContain('useDefault = true')
-        ->toContain('[allowlist]')->toContain('tests/Fixtures/')->toContain('.env.example');
+        ->toContain('[[allowlists]]')->toContain('tests/Fixtures/')->toContain('env\\.example');
 });
 
 it('commit-msg rejects AI attribution trailers and accepts clean messages', function (string $message, int $expected) {
@@ -673,13 +677,13 @@ it('commit-msg rejects AI attribution trailers and accepts clean messages', func
         expect($output)->not->toBe('');
     }
 })->with([
-    'co-authored-by' => ["Add thing\n\nCo-Authored-By: X <x@example.com>\n", 1],
-    'lowercase co-authored-by' => ["Add thing\n\nco-authored-by: X\n", 1],
+    'co-authored-by' => ["Add thing\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n", 1],
+    'lowercase co-authored-by' => ["Add thing\n\nco-authored-by: GitHub Copilot\n", 1],
     'claude-session' => ["Add thing\n\nClaude-Session: https://example.com/s/1\n", 1],
-    'assisted-by' => ["Add thing\n\nAssisted-by: tool\n", 1],
-    'generated-by' => ["Add thing\n\nGenerated-by: tool\n", 1],
-    'generated with' => ["Add thing\n\nGenerated with a tool\n", 1],
-    'generated with mid-line' => ["Add thing\n\nThis was Generated With help.\n", 1],
+    'assisted-by' => ["Add thing\n\nAssisted-by: Claude\n", 1],
+    'generated-by' => ["Add thing\n\nGenerated-by: ChatGPT\n", 1],
+    'generated with' => ["Add thing\n\nGenerated with Claude Code\n", 1],
+    'generated with mid-line' => ["Add thing\n\nThis was Generated With Cursor help.\n", 1],
     'clean' => ["Add thing\n\nBody text about the change.\n", 0],
     'attribution only in a comment line' => ["Add thing\n\n# Co-Authored-By: X\n# Generated with y\n", 0],
     'word co-authored in prose is not a trailer' => ["Fix the co-authored-by parser\n", 0],
@@ -757,7 +761,7 @@ it('a git commit with an attribution trailer is blocked once hooksPath is set', 
     isoSetup($dir, ['--yes' => true]);
     isoGit($dir, 'add -A');
 
-    [$bad] = isoGit($dir, 'commit -q -m "Add thing" -m "Co-Authored-By: X <x@example.com>"');
+    [$bad] = isoGit($dir, 'commit -q -m "Add thing" -m "Co-Authored-By: Claude <noreply@anthropic.com>"');
     [$good] = isoGit($dir, 'commit -q -m "Add thing"');
 
     expect($bad)->not->toBe(0)->and($good)->toBe(0);

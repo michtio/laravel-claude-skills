@@ -65,5 +65,8 @@ jobs:
       - name: PHPStan rule tests
         run: vendor/bin/pest --filter=PHPStan
 
+      - name: Full Pest suite (Linux)
+        run: vendor/bin/pest
+
       - name: Gate unit tests with the rule suite
         run: python3 -m unittest discover -s tests/gate

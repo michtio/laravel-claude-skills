@@ -140,6 +140,106 @@ class AppIsolationInDdev(unittest.TestCase):
         self.sh("php artisan claude-skills:setup --check")
 
 
+@unittest.skipUnless(shutil.which("ddev"), "needs ddev: the suite runs inside the fixture app's DDEV project, never on the host")
+class AppIsolationOnPostgresInDdev(unittest.TestCase):
+    """Round 2: the same gate on a real PostgreSQL (postgres:16) DDEV database.
+
+    The fixture app's DDEV project is switched to postgres:16 (its data is deleted first:
+    DDEV cannot change the database type in place), the setup runs, the project restarts and
+    the post-start hook must have created the `_test` database; `composer test` must pass on it.
+    The DDEV project is deleted afterwards (`ddev delete -Oy`) and the touched files restored.
+    """
+
+    EXTRA = ".ddev/config.yaml"
+
+    @classmethod
+    def setUpClass(cls):
+        r = subprocess.run(["bash", str(REPO / "scripts/make-fixture-app.sh"), "--force"], cwd=REPO, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError("make-fixture-app.sh --force failed: " + (r.stdout + r.stderr)[-2000:])
+        cls.saved: dict[str, bytes | None] = {}
+        for rel in [*TOUCHED, cls.EXTRA]:
+            p = APP / rel
+            if p.is_file():
+                cls.saved[rel] = p.read_bytes()
+            elif p.is_dir():
+                shutil.copytree(p, REPO / f"fixtures/.s6b-pg-save-{rel.replace('/', '_')}", dirs_exist_ok=True)
+                cls.saved[rel] = None
+            else:
+                cls.saved[rel] = b""  # absent
+        cls.dbname = slug(json.loads((APP / "composer.json").read_text())["name"])
+        ddev(["delete", "-Oy"], APP)  # DDEV cannot switch the database type of a project that has data
+        r = ddev(["config", "--database=postgres:16"], APP)
+        if r.returncode != 0:
+            raise RuntimeError("ddev config --database=postgres:16 failed: " + plain(r.stdout + r.stderr)[-2000:])
+        r = ddev(["start"], APP)
+        if r.returncode != 0:
+            raise RuntimeError("ddev start (postgres:16) failed: " + plain(r.stdout + r.stderr)[-2000:])
+
+    @classmethod
+    def tearDownClass(cls):
+        ddev(["delete", "-Oy"], APP)
+        for rel, content in cls.saved.items():
+            p = APP / rel
+            saved_dir = REPO / f"fixtures/.s6b-pg-save-{rel.replace('/', '_')}"
+            if p.is_dir():
+                shutil.rmtree(p)
+            elif p.is_file() or p.is_symlink():
+                p.unlink()
+            if content is None:
+                shutil.copytree(saved_dir, p)
+                shutil.rmtree(saved_dir)
+            elif content:
+                p.write_bytes(content)
+
+    def sh(self, command: str, expect: int | None = 0) -> subprocess.CompletedProcess:
+        r = subprocess.run(["ddev", "exec", "bash", "-c", command], cwd=APP, capture_output=True, text=True)
+        if expect is not None:
+            self.assertEqual(r.returncode, expect, f"`{command}` exited {r.returncode}:\n" + plain(r.stdout + r.stderr)[-3000:])
+        return r
+
+    def test_post_start_hook_creates_the_postgres_test_database_and_the_gate_passes(self):
+        env = APP / ".env"
+        base = env.read_text() if env.is_file() else (APP / ".env.example").read_text()
+        lines = [l for l in base.splitlines() if not re.match(r"(DB_CONNECTION|DB_HOST|DB_PORT|DB_DATABASE|DB_USERNAME|DB_PASSWORD|DB_URL)=", l)]
+        lines += ["DB_CONNECTION=pgsql", "DB_HOST=db", "DB_PORT=5432", "DB_DATABASE=db", "DB_USERNAME=db", "DB_PASSWORD=db"]
+        env.write_text("\n".join(lines) + "\n")
+        (APP / "tests/Feature").mkdir(parents=True, exist_ok=True)
+        (APP / "tests/Feature/ZzIsolationTest.php").write_text(
+            "<?php\n\nnamespace Tests\\Feature;\n\nuse Illuminate\\Support\\Facades\\DB;\nuse Tests\\TestCase;\n\n"
+            "class ZzIsolationTest extends TestCase\n{\n"
+            "    public function test_own_postgres_database(): void\n    {\n"
+            f"        $this->assertSame('{self.dbname}', DB::connection()->getDatabaseName());\n"
+            "        $this->assertSame('pgsql', DB::connection()->getDriverName());\n"
+            "        $this->assertSame('testing', app()->environment());\n    }\n}\n"
+        )
+
+        self.sh("php artisan claude-skills:setup --yes")
+        hook = (APP / ".ddev/config.claude-skills.yaml").read_text()
+        self.assertIn(self.dbname, hook)
+        self.assertIn("psql", hook)
+
+        # The post-start hook creates the database on the next start.
+        r = ddev(["restart"], APP)
+        self.assertEqual(r.returncode, 0, plain(r.stdout + r.stderr))
+        r = subprocess.run(
+            ["ddev", "exec", "-s", "db", "bash", "-c", "PGPASSWORD=db psql -U db -d postgres -tAc 'SELECT datname FROM pg_database'"],
+            cwd=APP, capture_output=True, text=True,
+        )
+        self.assertEqual(r.returncode, 0, plain(r.stdout + r.stderr))
+        self.assertIn(self.dbname, plain(r.stdout).split(), "post-start hook did not create the PostgreSQL test database")
+
+        # The gate command passes on it, and the suite ran on that database.
+        self.sh("php artisan test --filter=ZzIsolationTest")
+        out = self.sh("composer test")  # exit code 0 asserted by sh()
+        self.assertRegex(plain(out.stdout + out.stderr), r'"result":"passed","tests":[1-9]', "the suite did not run any test")
+
+        # A restart is idempotent (the hook finds the database), and a rerun changes nothing.
+        r = ddev(["restart"], APP)
+        self.assertEqual(r.returncode, 0, plain(r.stdout + r.stderr))
+        self.sh("php artisan claude-skills:setup --check")
+
+
 @unittest.skipUnless(shutil.which("ddev"), "needs ddev: the package suite runs inside DDEV, never on the host")
 class PackageGateInDdev(unittest.TestCase):
     """AC12 (macOS half) and the package-local skeleton.
