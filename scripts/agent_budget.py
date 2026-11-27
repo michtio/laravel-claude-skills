@@ -12,16 +12,22 @@ checker starts under 16 KB because it runs once per lens. Skills that are not
 preloaded load on demand with the Skill tool.
 
 Rules (tests/gate/CONTRACT.md section 1):
+  - an agent file needs a --- fenced frontmatter block;
   - startup over 48 KB (checker 16 KB) fails;
-  - an agent without Agent in `tools:` has cap 0;
-  - an agent with Agent declares `At most N agents per <run|review>`, N <= 5;
-  - a `*-checker` or `*-gate-writer` agent never has Agent;
-  - a read-only agent (name contains planner, reviewer, checker or gate-writer)
-    disallows mcp__laravel-boost__tinker and mcp__laravel-boost__record-rule
-    (it writes .ai/rules) in `disallowedTools:`;
+  - the Agent tool counts in every form: Agent, Agent(...), Task, Task(...);
+    an agent with no `tools:` line inherits it (plan AD3) unless
+    `disallowedTools:` names it; an agent without it has cap 0;
+  - an agent with the Agent tool declares `At most N agents per <run|review>`,
+    N <= 5;
+  - a `*-checker` or `*-gate-writer` agent never has the Agent tool, and a
+    planner or reviewer without a `tools:` line disallows it;
+  - a read-only agent (planner, reviewer, checker or gate-writer) disallows
+    mcp__laravel-boost__tinker and mcp__laravel-boost__record-rule (it writes
+    .ai/rules);
   - a planner, reviewer or checker also disallows Write, Edit and NotebookEdit
     (the gate writer writes tests, so it is exempt from that one);
-  - reviewer and checker agents never use effort: xhigh.
+  - reviewer and checker agents never use effort: xhigh (quotes stripped).
+Role markers match both the file stem and the frontmatter `name:`.
 
 Usage:
     python3 scripts/agent_budget.py              # table; exit 1 on any violation
@@ -48,78 +54,162 @@ READ_ONLY_MARKERS = ("planner", "reviewer", "checker", "gate-writer")
 NO_WRITE_MARKERS = ("planner", "reviewer", "checker")
 
 
-def frontmatter(agent: Path) -> str:
-    """Return the frontmatter block of an agent file, or '' when it has none."""
-    text = agent.read_text(encoding="utf-8")
-    if not text.startswith("---"):
-        return ""
-    parts = text.split("\n---", 1)
-    return parts[0] if len(parts) == 2 else ""
+AGENT_TOOLS = ("Agent", "Task")  # Task is the old name of the Agent tool
+KEY_LINE = re.compile(r"^([A-Za-z_][\w-]*):[ \t]*(.*)$")
+ITEM_LINE = re.compile(r"^\s*-\s*(.*)$")
 
 
-def field_list(head: str, key: str) -> list[str]:
-    """Read a list field, written inline (`a, b`, `[a, b]`) or as a YAML block list."""
-    m = re.search(rf"^{key}:[ \t]*(.*)$", head, re.M)
-    if not m:
+def unquote(value: str) -> str:
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+        return value[1:-1].strip()
+    return value
+
+
+def split_inline(value: str) -> list[str]:
+    """Split an inline list on commas outside parentheses: `Read, Agent(a, b)`."""
+    value = value.strip()
+    if value.startswith("[") and value.endswith("]"):
+        value = value[1:-1]
+    items, depth, current = [], 0, ""
+    for ch in value:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth = max(depth - 1, 0)
+        if ch == "," and depth == 0:
+            items.append(current)
+            current = ""
+        else:
+            current += ch
+    items.append(current)
+    return [unquote(i) for i in items if unquote(i)]
+
+
+def parse_frontmatter(agent: Path) -> dict[str, object] | None:
+    """Parse the frontmatter into {key: str | list[str]}; None when there is none.
+
+    A file has frontmatter when its first line is `---` and a later line is `---`.
+    A key with an inline value keeps it as a string (lists are split later by
+    `as_list`); a key with no inline value collects the block list below it.
+    Block items may start at column 0; blank lines and comments are skipped.
+    """
+    lines = agent.read_text(encoding="utf-8").splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    try:
+        close = next(i for i, line in enumerate(lines[1:], 1) if line.strip() == "---")
+    except StopIteration:
+        return None
+    data: dict[str, object] = {}
+    key = None
+    for line in lines[1:close]:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        m = KEY_LINE.match(line)
+        if m:
+            key = m.group(1)
+            value = m.group(2).strip()
+            data[key] = value if value else []
+            continue
+        item = ITEM_LINE.match(line)
+        if item and key is not None and isinstance(data.get(key), list):
+            value = unquote(item.group(1))
+            if value:
+                data[key].append(value)
+    return data
+
+
+def as_list(data: dict[str, object], key: str) -> list[str]:
+    value = data.get(key)
+    if value is None:
         return []
-    inline = m.group(1).strip()
-    if inline:
-        inline = inline.strip("[]")
-        return [t.strip().strip("'\"") for t in inline.split(",") if t.strip()]
-    items = []
-    for line in head[m.end():].splitlines()[1:]:
-        item = re.match(r"^\s+-\s*(.+)$", line)
-        if not item:
-            break
-        items.append(item.group(1).strip().strip("'\""))
-    return items
+    if isinstance(value, list):
+        return value
+    return split_inline(value)
 
 
-def field(head: str, key: str) -> str:
-    m = re.search(rf"^{key}:\s*(\S+)", head, re.M)
-    return m.group(1) if m else ""
+def as_scalar(data: dict[str, object], key: str) -> str:
+    value = data.get(key)
+    return unquote(value) if isinstance(value, str) else ""
 
 
-def agent_cap(agent: Path, tools: list[str]) -> tuple[str, list[str]]:
-    """Return (cap label, problems) for the agent-start rules."""
-    if "Agent" not in tools:
-        return "cap 0", []
-    if agent.stem.endswith("-checker") or agent.stem.endswith("-gate-writer"):
-        return "cap ?", ["must not have the Agent tool"]
-    caps = [int(n) for n in CAP_LINE.findall(agent.read_text(encoding="utf-8"))]
-    if not caps:
-        return "cap ?", ["Agent tool without an 'At most N agents per run|review' line"]
-    if max(caps) > MAX_AGENTS:
-        return f"cap {max(caps)}", [f"cap above {MAX_AGENTS}"]
-    return f"cap {max(caps)}", []
+def tool_name(entry: str) -> str:
+    """`Agent(a, b)` -> `Agent`."""
+    return entry.split("(", 1)[0].strip()
 
 
 def check(agent: Path, skills_dir: Path) -> tuple[str, list[str]]:
-    head = frontmatter(agent)
-    tools = field_list(head, "tools")
-    disallowed = set(field_list(head, "disallowedTools"))
-    cap_label, problems = agent_cap(agent, tools)
+    stem = agent.stem
+    data = parse_frontmatter(agent)
+    if data is None:
+        return f"{stem:26} cap ?", ["no frontmatter (no --- fences around the header)"]
+
+    name = as_scalar(data, "name")
+    labels = (stem, name) if name else (stem,)
+    tools_declared = "tools" in data
+    tools = {tool_name(t) for t in as_list(data, "tools")}
+    disallowed_entries = as_list(data, "disallowedTools")
+    disallowed_exact = set(disallowed_entries)
+
+    def role(*markers: str) -> bool:
+        return any(m in label for label in labels for m in markers)
+
+    def suffix(*suffixes: str) -> bool:
+        return any(label.endswith(s) for label in labels for s in suffixes)
+
+    # Agent tool: stated in `tools:` (any form), or inherited when there is no
+    # `tools:` line (plan AD3), unless `disallowedTools:` removes it.
+    # Only a bare name removes a tool: `Agent(x)` in disallowedTools removes one
+    # subagent type, not the Agent tool.
+    agent_disallowed = any(t in disallowed_exact for t in AGENT_TOOLS)
+    if tools_declared:
+        has_agent = any(t in tools for t in AGENT_TOOLS) and not agent_disallowed
+    else:
+        has_agent = not agent_disallowed
+
+    problems: list[str] = []
+    cap_label = "cap 0"
+    if has_agent:
+        if suffix("-checker", "-gate-writer"):
+            cap_label = "cap ?"
+            problems.append("must not have the Agent tool"
+                            + ("" if tools_declared else " (no tools: line, so it inherits Agent; disallow it)"))
+        elif not tools_declared and role("planner", "reviewer"):
+            cap_label = "cap ?"
+            problems.append("must disallow Agent (no tools: line, so it inherits Agent)")
+        else:
+            caps = [int(n) for n in CAP_LINE.findall(agent.read_text(encoding="utf-8"))]
+            if not caps:
+                cap_label = "cap ?"
+                problems.append("Agent tool without an 'At most N agents per run|review' line"
+                                + ("" if tools_declared else " (no tools: line, so it inherits Agent)"))
+            elif max(caps) > MAX_AGENTS:
+                cap_label = f"cap {max(caps)}"
+                problems.append(f"cap above {MAX_AGENTS}")
+            else:
+                cap_label = f"cap {max(caps)}"
 
     sizes = {}
-    for skill in field_list(head, "skills"):
+    for skill in as_list(data, "skills"):
         path = skills_dir / skill / "SKILL.md"
         if path.is_file():
             sizes[skill] = path.stat().st_size
         else:
             problems.append(f"preloads unknown skill {skill}")
     total = agent.stat().st_size + sum(sizes.values())
-    budget = CHECKER_BUDGET if "checker" in agent.stem else BUDGET
+    budget = CHECKER_BUDGET if role("checker") else BUDGET
     if total > budget:
         problems.append(f"over {budget // 1024} KB")
 
-    stem = agent.stem
-    if any(m in stem for m in READ_ONLY_MARKERS) and TINKER not in disallowed:
+    if role(*READ_ONLY_MARKERS) and TINKER not in disallowed_exact:
         problems.append(f"read-only agent must disallow {TINKER}")
-    if any(m in stem for m in READ_ONLY_MARKERS) and RECORD_RULE not in disallowed:
+    if role(*READ_ONLY_MARKERS) and RECORD_RULE not in disallowed_exact:
         problems.append(f"read-only agent must disallow {RECORD_RULE}")
-    if any(m in stem for m in NO_WRITE_MARKERS) and not all(t in disallowed for t in WRITE_TOOLS):
+    if role(*NO_WRITE_MARKERS) and not all(t in disallowed_exact for t in WRITE_TOOLS):
         problems.append("read-only agent must disallow Write, Edit, NotebookEdit")
-    if ("reviewer" in stem or "checker" in stem) and field(head, "effort") == "xhigh":
+    if role("reviewer", "checker") and as_scalar(data, "effort") == "xhigh":
         problems.append("reviewer agents use effort high, not xhigh")
 
     parts = ", ".join(f"{s} {b / 1024:.1f}" for s, b in sizes.items())
