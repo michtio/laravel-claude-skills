@@ -42,6 +42,11 @@ declare(strict_types=1);
  *      one underscore, leading/trailing underscores trimmed.
  *      "laravel/laravel" -> laravel_test, "Acme/My-Shop.v2" -> my_shop_v2_test.
  *
+ * 1b. SERVER TWINS: DB_URL, DB_CONNECTION, DB_DATABASE and every live flag
+ *    also get `<server name="X" value="v"/>` with the same value (Laravel reads
+ *    $_SERVER first). Twins for other keys are allowed, none is required for
+ *    APP_ENV.
+ *
  * 2. LIVE-PROVIDER FLAGS
  *    A key is a live-provider flag when it matches, case-sensitively,
  *    /^[A-Z][A-Z0-9_]*_LIVE(_MODE)?$/ in the lines of .env.example or .env
@@ -67,6 +72,9 @@ declare(strict_types=1);
  *      none of pest: an app "@php artisan test", a package
  *        "@php vendor/bin/testbench package:test"
  *      always last                          "bash .githooks/gitleaks-check"
+ *    An APP additionally starts with "@php artisan config:clear --ansi" (stale
+ *    cached config would break the suite; Laravel's stock script has it); a
+ *    package has no config:clear.
  *    An existing scripts.test that differs and was not written by setup is a
  *    hand edit: "edited by hand: composer.json", diff shown, asked.
  *
@@ -177,6 +185,34 @@ function isoEnv(?string $xml): array
 }
 
 /**
+ * Parse the server elements of a PHPUnit file as name => value.
+ *
+ * @return array<string, string>
+ */
+function isoServer(?string $xml): array
+{
+    $doc = simplexml_load_string((string) $xml);
+    $out = [];
+    foreach ($doc->php->server ?? [] as $server) {
+        $out[(string) $server['name']] = (string) $server['value'];
+    }
+
+    return $out;
+}
+
+/**
+ * Assert the `<server name="X" value="v"/>` twin of a pin. Laravel reads $_SERVER
+ * before $_ENV, so a forced env alone does not beat a variable the process
+ * already has. Required for DB_URL, DB_CONNECTION, DB_DATABASE and live flags.
+ */
+function isoTwin(?string $xml, string $name, string $value): void
+{
+    $server = isoServer($xml);
+    expect(array_key_exists($name, $server))->toBeTrue("no <server> twin for $name");
+    expect($server[$name])->toBe($value);
+}
+
+/**
  * Assert a forced pin.
  */
 function isoPinned(array $env, string $name, string $value): void
@@ -232,6 +268,9 @@ it('creates phpunit.xml for an app with forced pins and its own database (DDEV)'
     isoPinned($env, 'DB_CONNECTION', 'mysql');
     isoPinned($env, 'DB_DATABASE', 'app_test');
     expect($xml)->toContain('<env name="APP_ENV" value="testing" force="true"/>');
+    isoTwin($xml, 'DB_URL', '');
+    isoTwin($xml, 'DB_CONNECTION', 'mysql');
+    isoTwin($xml, 'DB_DATABASE', 'app_test');
 
     $doc = simplexml_load_string($xml);
     expect((string) $doc['bootstrap'])->toBe('vendor/autoload.php');
@@ -256,6 +295,8 @@ it('creates phpunit.xml.dist for a package with an in-memory sqlite database', f
     }
     isoPinned($env, 'DB_CONNECTION', 'sqlite');
     isoPinned($env, 'DB_DATABASE', ':memory:');
+    isoTwin($xml, 'DB_CONNECTION', 'sqlite');
+    isoTwin($xml, 'DB_DATABASE', ':memory:');
     $doc = simplexml_load_string($xml);
     expect((string) $doc['bootstrap'])->toBe('vendor/autoload.php')
         ->and((string) $doc->testsuites->testsuite['name'])->toBe('Test')
@@ -330,6 +371,9 @@ it('forces every live-provider flag found in .env.example and .env off', functio
     foreach (['PAYMENTS_LIVE', 'STRIPE_LIVE_MODE', 'MOLLIE_API_LIVE'] as $key) {
         isoPinned($env, $key, 'false');
     }
+    foreach (['PAYMENTS_LIVE', 'STRIPE_LIVE_MODE', 'MOLLIE_API_LIVE'] as $key) {
+        isoTwin($this->read($dir, 'phpunit.xml'), $key, 'false');
+    }
     foreach (['OLD_LIVE', 'LIVE_RELOAD', 'OLIVE_OIL', 'ALIVE', 'lower_live', 'APP_NAME'] as $key) {
         expect($env)->not->toHaveKey($key);
     }
@@ -371,7 +415,7 @@ it('merges into a stock Laravel phpunit.xml: unforced pins replaced, everything 
     $env = isoEnv($this->read($dir, 'phpunit.xml'));
     isoPinned($env, 'CACHE_STORE', 'array');
     expect($env['BCRYPT_ROUNDS'][0])->toBe('4')
-        ->and(substr_count($this->read($dir, 'phpunit.xml'), 'name="CACHE_STORE"'))->toBe(1)
+        ->and(substr_count($this->read($dir, 'phpunit.xml'), '<env name="CACHE_STORE"'))->toBe(1)
         ->and($this->read($dir, 'phpunit.xml'))->toContain('<testsuite name="Unit">');
 });
 
@@ -512,7 +556,7 @@ it('adds scripts.test for an app with no tools installed: artisan test then the 
     isoSetup($dir, ['--yes' => true]);
 
     $composer = json_decode($this->read($dir, 'composer.json'), true);
-    expect($composer['scripts']['test'])->toBe(['@php artisan test', 'bash .githooks/gitleaks-check'])
+    expect($composer['scripts']['test'])->toBe(['@php artisan config:clear --ansi', '@php artisan test', 'bash .githooks/gitleaks-check'])
         ->and($composer['require']['laravel/boost'])->toBe('^2.5');
 });
 
@@ -526,9 +570,9 @@ it('orders the gate steps pint, phpstan, pest, secret scan from what is installe
 
     expect(json_decode($this->read($dir, 'composer.json'), true)['scripts']['test'])->toBe($expected);
 })->with([
-    'pint and pest' => [['laravel/pint' => '^1.0', 'pestphp/pest' => '^4.0'], ['pint --test', 'pest', 'bash .githooks/gitleaks-check']],
-    'all four' => [['laravel/pint' => '^1.0', 'larastan/larastan' => '^3.0', 'pestphp/pest' => '^4.0'], ['pint --test', 'phpstan analyse --no-progress', 'pest', 'bash .githooks/gitleaks-check']],
-    'phpstan, no pest' => [['phpstan/phpstan' => '^2.0'], ['phpstan analyse --no-progress', '@php artisan test', 'bash .githooks/gitleaks-check']],
+    'pint and pest' => [['laravel/pint' => '^1.0', 'pestphp/pest' => '^4.0'], ['@php artisan config:clear --ansi', 'pint --test', 'pest', 'bash .githooks/gitleaks-check']],
+    'all four' => [['laravel/pint' => '^1.0', 'larastan/larastan' => '^3.0', 'pestphp/pest' => '^4.0'], ['@php artisan config:clear --ansi', 'pint --test', 'phpstan analyse --no-progress', 'pest', 'bash .githooks/gitleaks-check']],
+    'phpstan, no pest' => [['phpstan/phpstan' => '^2.0'], ['@php artisan config:clear --ansi', 'phpstan analyse --no-progress', '@php artisan test', 'bash .githooks/gitleaks-check']],
 ]);
 
 it('gates a package with testbench package:test, or pest when installed', function () {
@@ -585,18 +629,18 @@ it('replaces a hand-edited scripts.test only after a yes', function () {
         ->expectsConfirmation('Apply these changes?', 'yes')
         ->assertExitCode(0);
 
-    expect(json_decode($this->read($dir, 'composer.json'), true)['scripts']['test'])->toBe(['@php artisan test', 'bash .githooks/gitleaks-check']);
+    expect(json_decode($this->read($dir, 'composer.json'), true)['scripts']['test'])->toBe(['@php artisan config:clear --ansi', '@php artisan test', 'bash .githooks/gitleaks-check']);
 });
 
 it('leaves an identical existing scripts.test alone (no hand edit, no change)', function () {
     $dir = $this->project('app');
-    isoComposer($dir, ['scripts' => ['test' => ['@php artisan test', 'bash .githooks/gitleaks-check']]]);
+    isoComposer($dir, ['scripts' => ['test' => ['@php artisan config:clear --ansi', '@php artisan test', 'bash .githooks/gitleaks-check']]]);
 
     [, $output] = isoSetup($dir, ['--yes' => true]);
 
     expect($output)->not->toContain('edited by hand: composer.json')
         ->and(is_file($dir.'/.githooks/gitleaks-check'))->toBeTrue('the script the existing entry calls must be written')
-        ->and(json_decode($this->read($dir, 'composer.json'), true)['scripts']['test'])->toBe(['@php artisan test', 'bash .githooks/gitleaks-check']);
+        ->and(json_decode($this->read($dir, 'composer.json'), true)['scripts']['test'])->toBe(['@php artisan config:clear --ansi', '@php artisan test', 'bash .githooks/gitleaks-check']);
 });
 
 // 5. Commit-message hook, secret scan, hooksPath

@@ -55,6 +55,10 @@ class AppIsolationInDdev(unittest.TestCase):
             r = subprocess.run(["bash", str(REPO / "scripts/make-fixture-app.sh")], cwd=REPO, capture_output=True, text=True)
             if r.returncode != 0:
                 raise RuntimeError("make-fixture-app.sh failed: " + (r.stdout + r.stderr)[-2000:])
+        # A clean app: the generated one may hold files no tracked script creates.
+        r = subprocess.run(["bash", str(REPO / "scripts/make-fixture-app.sh"), "--force"], cwd=REPO, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError("make-fixture-app.sh --force failed: " + (r.stdout + r.stderr)[-2000:])
         ddev(["start"], APP)
         cls.saved: dict[str, bytes | None] = {}
         for rel in TOUCHED:
@@ -93,7 +97,7 @@ class AppIsolationInDdev(unittest.TestCase):
         env = APP / ".env"
         base = env.read_text() if env.is_file() else (APP / ".env.example").read_text()
         lines = [l for l in base.splitlines() if not re.match(r"(DB_CONNECTION|DB_HOST|DB_PORT|DB_DATABASE|DB_USERNAME|DB_PASSWORD|PAYMENTS_LIVE)=", l)]
-        lines += ["DB_CONNECTION=mysql", "DB_HOST=db", "DB_PORT=3306", "DB_DATABASE=db", "DB_USERNAME=db", "DB_PASSWORD=db", "PAYMENTS_LIVE=true"]
+        lines += ["DB_CONNECTION=mariadb", "DB_HOST=db", "DB_PORT=3306", "DB_DATABASE=db", "DB_USERNAME=db", "DB_PASSWORD=db", "PAYMENTS_LIVE=true"]
         env.write_text("\n".join(lines) + "\n")
         (APP / "tests/Feature").mkdir(parents=True, exist_ok=True)
         (APP / "tests/Feature/ZzIsolationTest.php").write_text(
@@ -182,8 +186,8 @@ class PackageGateInDdev(unittest.TestCase):
         self.assertIn("MAIL_MAILER", (self.pkg / "phpunit.xml.dist").read_text())
 
         # AC12 / AC10 on a package: the gate command runs the package suite, the live flag is off.
-        out = self.sh("composer test")
-        self.assertIn("OK (1 test", out.stdout + out.stderr, "the package suite did not run")
+        out = self.sh("composer test")  # exit code 0 asserted by sh()
+        self.assertRegex(out.stdout + out.stderr, r"Tests:\s+1 passed", "the package suite did not run")
 
         # Package-local skeleton: Boost renders this package's own guidelines, runner text included.
         self.sh("php vendor/bin/testbench boost:update --no-interaction")
