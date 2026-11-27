@@ -121,7 +121,33 @@ The fixture apps carry a stand-in `vendor/bin/pest` (sh, no PHP, no database) th
 
 `evals/fixtures/release-samples/<case>/pass.md` is a hand-back that must satisfy the case; each `fail-*.md` is a planted bad one that must not. `test_s8.py` scores them with the Craft pack's semantics, so an edit that loosens an assertion turns the gate red.
 
-## 5. Not covered here
+## 5. Round 2 (`tests/gate/test_s8_round2.py`)
+
+The review of the first build found gaps. Each statement below is behaviour a real agent must follow; the test checks that the agent's text carries it. What a model does with the text is S11's job.
+
+### laravel-builder
+
+- **R22, gate flow order.** The profile opt-out and the isolation check are decided before a caller-supplied gate commit. A caller commit only means "start no second gate writer". On a non-isolated suite the flow line is `Gate flow: builder-written (no isolated suite)`, followed by `Gate commit (supplied, not locked): <hash>`. Both lock checks are still run and pasted, and Open carries `suite not isolated: tests ran against the configured DB`. The builder stops before the first test run only when the tests use a database-wiping trait (`RefreshDatabase`, `DatabaseMigrations`, `DatabaseTruncation`, `LazilyRefreshDatabase`) on a non-isolated suite, and asks for the pin.
+- **Isolation** also counts sqlite `:memory:` and Testbench's in-memory default as isolated.
+- **G4, builder-wide.** The builder never skips, todos, onlys, deletes or loosens any existing test, and never edits test config (`tests/Pest.php`, `TestCase`, the `phpunit.xml` pins) to get green; it reports a red old test instead. The gate files come from `git show --name-only --format= <gate commit>`, never from a hand-back list.
+- **Revert-to-prove safety.** After `git stash push -m "revert-to-prove <slice>"` the builder confirms an entry with that exact message exists and that the fix files actually reverted; if not it uses `git checkout <base> -- <files>`. On an apply conflict, or an error between push and apply, it stops and reports. It never ends a run with its fix in the stash.
+- **Runner.** An explicit profile runner wins over detection; with no `.ddev/` and no named command it asks or stops.
+- **Register.** A missing register is reported, and every package is then treated as having no verdict (planner too).
+- **Mirrors the Craft builder:** a mandatory todo list when the plan has more than 3 steps, a simplification pass before the hand-back, "stop early at a passing gate and report the remainder", a Manual checks section and a `Reuse:` line.
+
+### laravel-gate-writer
+
+- **G2 staging.** Before committing, verifies that `git diff --cached --name-only` equals exactly its own files under `tests/`, or commits with `git commit -m "test(gate): <slice id>" -- <files>`; stops if anything else is staged.
+- **Isolation.** Before its first run, checks for the forced `DB_DATABASE` pin (or an in-memory sqlite connection) and stops if it is missing.
+- States that "No tests found" for an empty filter is not red for the right reason.
+
+### laravel-planner and laravel-review-checker
+
+- Deny every write-capable built-in tool that can be named (`Write`, `Edit`, `NotebookEdit`, `Agent`) plus tinker and record-rule, with no `tools:` allowlist, so Boost's tools stay reachable (AD3).
+- State that Bash is limited by instruction only, and list the forbidden Bash classes: `migrate`, `db:wipe`, `composer require` and `composer remove`, file writes, `git commit`, `git push`, `git stash`.
+- Checker only: the weakening list adds todo markers, deleted test blocks and changed gate-commit files to skips, onlys, fewer assertions and looser matchers.
+
+## 6. Not covered here
 
 - G4 and G5 (weakening list, gate reruns) and G7 (debugger hypotheses) belong to the reviewer and the debugger: slice S9. G9 and G10 are pending in the reference itself.
 - The outside-builder path (AC26, AC28) is slice S10.
