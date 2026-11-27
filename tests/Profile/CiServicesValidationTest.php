@@ -49,3 +49,13 @@ it('prints the ci services among the settings', function () {
 
     expect($output)->toContain('ci_services: redis (profile)');
 })->group('R23');
+
+it('leaves ci_services out of the settings when the profile does not set it', function () {
+    $dir = $this->project('app');
+    $this->writeProfile($dir, ['version' => 1, 'laravel' => ['ci' => true]]);
+
+    [, $output] = $this->setupRun($dir, ['--yes' => true]);
+
+    expect($output)->toContain('ci: true (profile)')
+        ->not->toContain('ci_services');
+})->group('R23');

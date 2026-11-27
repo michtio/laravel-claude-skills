@@ -388,11 +388,12 @@ final class WorkflowPlanner implements Planner
     }
 
     /**
-     * The database type and version of `.ddev/config.yaml` (DDEV's default, MariaDB
-     * 10.11, when the file sets none; for a package on the DDEV test database, the
-     * resolved type and version, so CI tests the engine and version the package
-     * tests on locally), or null without a DDEV config or for a type
-     * the workflow has no image for.
+     * The database type and version of `.ddev/config.yaml`; when the file does not
+     * name them in full, the ones the installed DDEV reports (resolved on the project
+     * for a package on the DDEV test database and for an app, so CI tests the engine
+     * and version the project runs locally; else the image's default version, never
+     * an assumed old DDEV default), or null without a DDEV config or for a type the
+     * workflow has no image for. Proven by tests/Profile/AppDdevDatabaseImageTest.php.
      *
      * @return array{0: string, 1: string}|null
      * @author michtio
@@ -403,7 +404,7 @@ final class WorkflowPlanner implements Planner
             return null;
         }
 
-        if ($project->ddevTestDatabase && $project->ddevDatabase !== null && isset(self::DATABASES[$project->ddevDatabase['type']])) {
+        if ($project->ddevDatabase !== null && isset(self::DATABASES[$project->ddevDatabase['type']])) {
             return [$project->ddevDatabase['type'], $project->ddevDatabase['version']];
         }
 
@@ -418,7 +419,7 @@ final class WorkflowPlanner implements Planner
         }
 
         if ($version === null || preg_match('/^[0-9][0-9.]*$/', $version) !== 1) {
-            $version = isset($database['type']) ? self::DATABASES[$type][1] : '10.11';
+            $version = self::DATABASES[$type][1];
         }
 
         return [$type, $version];

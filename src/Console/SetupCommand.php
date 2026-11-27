@@ -178,6 +178,18 @@ final class SetupCommand extends Command
             }
         }
 
+        // An app on DDEV that leaves its database to DDEV's default: CI follows the installed DDEV.
+        if (! $project->ddevTestDatabase && $options['ci'] === true && $project->usesDdev() && ! $project->usesMemoryDatabase()
+            && is_file($root.'/.ddev/config.yaml')) {
+            $read = $project->readAppDdevDatabase($this->laravel->make(DdevDatabaseSource::class));
+
+            if ($read !== null) {
+                $project = $project->withDdevDatabase($read);
+            } elseif (! $this->namesDdevDatabase($project)) {
+                $this->warn('The installed DDEV could not say which database it runs, and .ddev/config.yaml names none: the CI workflow uses its default image. Add a database: block with type and version to .ddev/config.yaml so CI tests the engine you run.');
+            }
+        }
+
         $phpstan = new PhpstanPlanner((int) $options['phpstan_level'], $profile->sets('phpstan_level'));
 
         try {
@@ -278,6 +290,20 @@ final class SetupCommand extends Command
     // =========================================================================
 
     /**
+     * Whether `.ddev/config.yaml` names the database in full (type and version).
+     *
+     * @author michtio
+     */
+    private function namesDdevDatabase(Project $project): bool
+    {
+        $block = $project->ddevConfig()['database'] ?? null;
+        $version = is_array($block) ? ($block['version'] ?? null) : null;
+
+        return is_array($block) && is_string($block['type'] ?? null) && $block['type'] !== ''
+            && (is_string($version) || is_int($version) || is_float($version)) && (string) $version !== '';
+    }
+
+    /**
      * State where the options come from and list every effective option with its
      * source, `(profile)` or `(default)`, on every run. Unknown keys under `laravel`
      * are named, so a typo is not silent.
@@ -293,13 +319,13 @@ final class SetupCommand extends Command
         }
 
         foreach ($profile->effective() as $key => $value) {
+            // ci_services is listed only when the profile sets it (CiServicesValidationTest).
+            if ($key === 'ci_services' && ! $profile->sets($key)) {
+                continue;
+            }
+
             $source = $profile->sets($key) ? 'profile' : 'default';
             $this->line(OutputFormatter::escape('  '.$key.': '.$this->optionValue($key, $value).' ('.$source.')'));
-        }
-
-        if ($profile->setsCiServices()) {
-            $services = $profile->ciServices();
-            $this->line(OutputFormatter::escape('  ci_services: '.($services === [] ? 'none' : implode(', ', $services)).' (profile)'));
         }
 
         foreach ($profile->unknownLaravelKeys() as $key) {
@@ -315,6 +341,10 @@ final class SetupCommand extends Command
      */
     private function optionValue(string $key, mixed $value): string
     {
+        if ($key === 'ci_services' && $value === []) {
+            return 'none';
+        }
+
         if ($key === 'test_pins') {
             if (! is_array($value) || $value === []) {
                 return 'none';

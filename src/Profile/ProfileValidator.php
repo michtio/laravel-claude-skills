@@ -16,8 +16,8 @@ use stdClass;
  * `locked` or `builder-written`; `builders` and `setup.steps` are lists of objects
  * with string `name` and `command`. The schema leaves `laravel` and `verdicts` as
  * open objects, so their entries are checked here: the Laravel options (the five
- * of LARAVEL_DEFAULTS, the three of OPTIONAL_DEFAULTS and `ci_services`) and the
- * fields of each verdict.
+ * of LARAVEL_DEFAULTS and the four of OPTIONAL_DEFAULTS) and the fields of each
+ * verdict.
  *
  * Unknown keys are allowed at every level (the schema's "unknown keys are kept and
  * ignored"); unknownLaravelKeys() lists the ones under `laravel` so the setup can
@@ -45,19 +45,20 @@ final class ProfileValidator
     /**
      * The Laravel options that are listed by Profile::laravel() only when the profile
      * sets them, with their defaults, in that order: `test_database` (auto or ddev),
-     * `php_matrix` (auto or a list of X.Y versions) and `test_pins` (name => value
-     * or `env`; empty means no override).
+     * `php_matrix` (auto or a list of X.Y versions), `test_pins` (name => value
+     * or `env`; empty means no override) and `ci_services` (extra service containers
+     * for the CI workflow's gate job; empty means none).
      */
     public const OPTIONAL_DEFAULTS = [
         'test_database' => 'auto',
         'php_matrix' => 'auto',
         'test_pins' => [],
+        'ci_services' => [],
     ];
 
     /**
-     * The services `laravel.ci_services` may name (extra service containers for the
-     * CI workflow's gate job; read by Profile::ciServices(), outside effective(), and
-     * empty means none): the ones the workflow has an image for. Refusing any other
+     * The services `laravel.ci_services` may name: the ones the CI workflow has an
+     * image for. Refusing any other
      * name is proven by tests/Profile/CiServicesValidationTest.php.
      */
     public const CI_SERVICES = ['redis'];
@@ -162,8 +163,7 @@ final class ProfileValidator
     }
 
     /**
-     * The keys under `laravel` that are not one of the nine options (the eight
-     * defaults and `ci_services`), in file order.
+     * The keys under `laravel` that are not one of the nine options, in file order.
      *
      * @return list<string>
      * @author michtio
@@ -176,7 +176,7 @@ final class ProfileValidator
 
         return array_values(array_filter(
             array_map('strval', array_keys(get_object_vars($profile->laravel))),
-            static fn (string $key): bool => ! array_key_exists($key, self::LARAVEL_DEFAULTS) && ! array_key_exists($key, self::OPTIONAL_DEFAULTS) && $key !== 'ci_services',
+            static fn (string $key): bool => ! array_key_exists($key, self::LARAVEL_DEFAULTS) && ! array_key_exists($key, self::OPTIONAL_DEFAULTS),
         ));
     }
 
