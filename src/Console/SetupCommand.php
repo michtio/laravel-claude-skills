@@ -356,9 +356,12 @@ final class SetupCommand extends Command
 
     /**
      * Print the Claude Code permissions suggested for the project's
-     * `.claude/settings.json`, on every run: the gate command and the test and
-     * format commands in the runner's form, and the agents plugin. Printed text
-     * only: the setup never writes Claude Code's settings (they are the user's).
+     * `.claude/settings.json`, on every run: the gate command as one exact rule
+     * (`Bash(composer test)`, `Bash(ddev composer test)` on DDEV), and the agents
+     * plugin. No wildcard rule: `ddev exec` runs its arguments through the
+     * container's `bash -c`, which expands `$(...)` even inside single quotes, and
+     * on the host `pest -c <file>` skips the pins and `pint *` can rewrite locked
+     * gate files. Printed text only: the setup never writes Claude Code's settings.
      * Proven by tests/Profile/S9d1OutputTest.php ("prints suggested .claude/settings.json
      * permissions", "never writes .claude/settings.json").
      *
@@ -368,11 +371,7 @@ final class SetupCommand extends Command
     {
         $settings = [
             'permissions' => [
-                'allow' => [
-                    'Bash('.$project->composer().' test)',
-                    'Bash('.$project->vendorBin().'pest *)',
-                    'Bash('.$project->vendorBin().'pint *)',
-                ],
+                'allow' => ['Bash('.$project->composer().' test)'],
             ],
             'extraKnownMarketplaces' => [
                 'laravel-claude-skills' => ['source' => ['source' => 'github', 'repo' => self::MARKETPLACE]],

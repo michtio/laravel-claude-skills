@@ -26,7 +26,7 @@ Every run first prints what it detected, then every effective option with its so
 - `--yes`: apply without asking.
 - `--path=<dir>`: the project root.
 
-Every run also prints suggested `.claude/settings.json` content: `permissions.allow` rules for the gate command (`Bash(composer test)`, or `Bash(ddev composer test)` on DDEV), the test runner and Pint in the runner's form, and the agents plugin's marketplace and `enabledPlugins` entry. The setup never writes `.claude/settings.json`: Claude Code's settings are yours, so merge what you want.
+Every run also prints suggested `.claude/settings.json` content: one exact `permissions.allow` rule for the gate command (`Bash(composer test)`, or `Bash(ddev composer test)` on DDEV), and the agents plugin's marketplace and `enabledPlugins` entry. It suggests no wildcard rule: `ddev exec` hands its arguments to the container's shell, which expands `$(...)` even inside single quotes, so a rule such as `Bash(ddev exec vendor/bin/pest *)` would approve any command; on the host, `pest -c <file>` can skip the test pins and `pint` can rewrite files it should not. The setup never writes `.claude/settings.json`: Claude Code's settings are yours, so merge what you want.
 
 Some lines change nothing on disk and say what to do instead:
 

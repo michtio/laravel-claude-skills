@@ -6,6 +6,8 @@ namespace Michtio\LaravelClaudeSkills\Setup;
 
 use Michtio\LaravelClaudeSkills\Setup\Planners\PhpunitPlanner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\WorkflowPlanner;
+use Symfony\Component\Yaml\Exception\ParseException;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * Lines the setup prints about the project that change nothing on disk: what it
@@ -23,15 +25,18 @@ use Michtio\LaravelClaudeSkills\Setup\Planners\WorkflowPlanner;
  *   in-memory sqlite (the move is not applied yet) is told about tables a test
  *   creates (MySQL keeps them) and the connections per-test apps leave open.
  * - Workflows without a database: when the suite runs on a database server,
- *   every workflow the setup does not own that runs the tests and has no
- *   `services:` is named. None is changed. A heuristic: `services:` anywhere in
- *   the file counts, so a workflow with a service on one job and tests on
- *   another is not named (a documented false negative).
+ *   workflow the setup does not own with a job that runs the tests and has no
+ *   mysql, mariadb or postgres service is named, judged per job. None is changed.
  *
  * Proven by tests/Profile/S9d1OutputTest.php: "warns when Boost wrote into the
  * @testbench skeleton", "prints the runner-form boost:update", "warns when
  * test_database ddev moves a package suite", "names every workflow it does not
- * own", each with its negative case.
+ * own", each with its negative case; and by tests/Profile/WorkflowAdvisoryTest.php:
+ * "does not take a composer test:<name> script for the test suite", "ignores a
+ * test command that only appears in a comment line", "reads a single-quoted
+ * in-memory DB_DATABASE pin as not yet moved", "names a workflow whose database
+ * service is on another job than its tests", "names a workflow whose test job has
+ * only a redis service".
  *
  * @author michtio
  */
@@ -54,6 +59,11 @@ final class Advisories
      * A workflow command that runs the test suite.
      */
     public const TEST_COMMAND = '/\bvendor\/bin\/(pest|phpunit|paratest)(?![\w:-])|\bartisan test(?![\w:-])|\bcomposer( run(-script)?)? test(?![\w:-])|\btestbench package:test(?![\w:-])/';
+
+    /**
+     * A service image that is a database server the suite can run on.
+     */
+    public const DATABASE_IMAGE = '/(^|\/)(mysql|mariadb|postgres)(:|$)/i';
 
     // Public Methods
     // =========================================================================
@@ -179,10 +189,7 @@ final class Advisories
                 continue;
             }
 
-            // Comment lines run nothing.
-            $content = (string) preg_replace('/^\s*#.*$/m', '', (string) file_get_contents($file));
-
-            if (preg_match(self::TEST_COMMAND, $content) === 1 && preg_match('/^\s+services\s*:/m', $content) !== 1) {
+            if (self::testsWithoutDatabase((string) file_get_contents($file))) {
                 $named[] = $relative;
             }
         }
@@ -191,11 +198,77 @@ final class Advisories
             return null;
         }
 
-        return 'The suite now runs on a database server, but these workflows run the tests without a database service: '.implode(', ', $named).'. Add one to each before the next push; the setup does not change them.';
+        return 'The suite runs on a database server, but these workflows run the tests without a database service: '.implode(', ', $named).'. Add one to each before the next push; the setup does not change them.';
     }
 
     // Private Methods
     // =========================================================================
+
+    /**
+     * Whether a workflow has a job that runs the tests without a database service:
+     * a step whose `run` matches TEST_COMMAND, in a job with no service whose
+     * `image` is mysql, mariadb or postgres (a redis-only job counts as missing
+     * one). A file that does not parse falls back to a text check over the whole
+     * file, comment lines left out.
+     *
+     * @author michtio
+     */
+    private static function testsWithoutDatabase(string $content): bool
+    {
+        try {
+            $workflow = Yaml::parse($content);
+        } catch (ParseException) {
+            $text = (string) preg_replace('/^\s*#.*$/m', '', $content);
+
+            return preg_match(self::TEST_COMMAND, $text) === 1 && preg_match('/^\s+services\s*:/m', $text) !== 1;
+        }
+
+        $jobs = is_array($workflow) && is_array($workflow['jobs'] ?? null) ? $workflow['jobs'] : [];
+
+        foreach ($jobs as $job) {
+            if (is_array($job) && self::runsTests($job) && ! self::hasDatabaseService($job)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether one of the job's steps runs the test suite.
+     *
+     * @param array<mixed> $job
+     * @author michtio
+     */
+    private static function runsTests(array $job): bool
+    {
+        foreach (is_array($job['steps'] ?? null) ? $job['steps'] : [] as $step) {
+            if (is_array($step) && is_string($step['run'] ?? null) && preg_match(self::TEST_COMMAND, $step['run']) === 1) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether the job has a service whose image is a database server.
+     *
+     * @param array<mixed> $job
+     * @author michtio
+     */
+    private static function hasDatabaseService(array $job): bool
+    {
+        foreach (is_array($job['services'] ?? null) ? $job['services'] : [] as $service) {
+            $image = is_array($service) ? ($service['image'] ?? null) : $service;
+
+            if (is_string($image) && preg_match(self::DATABASE_IMAGE, $image) === 1) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /**
      * Whether the folder holds a test file (a `*Test.php`), symlinks not followed.

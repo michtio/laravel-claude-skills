@@ -54,3 +54,24 @@ it('reads a single-quoted in-memory DB_DATABASE pin as not yet moved', function 
 
     expect(Advisories::movedSuite($project))->toContain('docs/profile.md');
 });
+
+it('names a workflow whose database service is on another job than its tests', function () {
+    $dir = $this->project('app', ddev: true);
+    workflowAdvisoryPut($dir, 'split.yml', "      - run: echo setup\n    services:\n      mysql:\n        image: mysql:8.0\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: vendor/bin/pest\n");
+
+    expect(Advisories::workflowsWithoutDatabase(new Project($dir, Kind::App, Runner::Ddev)))->toContain('.github/workflows/split.yml');
+});
+
+it('names a workflow whose test job has only a redis service', function () {
+    $dir = $this->project('app', ddev: true);
+    workflowAdvisoryPut($dir, 'redis.yml', "      - run: composer test\n    services:\n      redis:\n        image: redis:7\n");
+
+    expect(Advisories::workflowsWithoutDatabase(new Project($dir, Kind::App, Runner::Ddev)))->toContain('.github/workflows/redis.yml');
+});
+
+it('does not name a workflow whose test job has a postgres service', function () {
+    $dir = $this->project('app', ddev: true);
+    workflowAdvisoryPut($dir, 'pg.yml', "      - run: composer test\n    services:\n      db:\n        image: postgres:17\n");
+
+    expect(Advisories::workflowsWithoutDatabase(new Project($dir, Kind::App, Runner::Ddev)))->toBeNull();
+});

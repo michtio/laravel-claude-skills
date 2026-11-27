@@ -29,11 +29,12 @@ use Symfony\Component\Yaml\Yaml;
  * and `APP_DEBUG` is set in a block `env:` map or list (replaced in place, or
  * appended after its last entry), or an `env:` block is appended. Every other
  * line, comments and blank lines included, stays as it is. Only when the edited
- * text does not parse to the owned values (a flow-style `env: {...}`, for
- * example) is the file rewritten through symfony/yaml, without its comments; the
+ * text does not parse to the owned values, or changes anything else the file
+ * parses to (a flow-style `env: {...}`, or a key the line edit would swallow, for
+ * example), is the file rewritten through symfony/yaml, without its comments; the
  * diff shows that before it is applied. Proven by tests/Profile/S9d1RunnerTest.php
  * ("keeps every line of testbench.yaml it does not own", "keeps a comment inside
- * an env map").
+ * an env map") and tests/Profile/TestbenchYamlTextEditTest.php.
  *
  * @author michtio
  */
@@ -190,11 +191,41 @@ final class TestbenchYamlPlanner implements Planner
 
         try {
             $parsed = Yaml::parse($edited);
+            $original = $content === '' ? [] : Yaml::parse($content);
         } catch (ParseException) {
             return null;
         }
 
-        return is_array($parsed) && $this->owned($parsed) === $wanted ? $edited : null;
+        // Everything but the owned values must parse exactly as before.
+        return is_array($parsed) && is_array($original) && $this->owned($parsed) === $wanted
+            && $this->unowned($parsed) === $this->unowned($original) ? $edited : null;
+    }
+
+    /**
+     * The parsed file without the owned values: `laravel`, and APP_DEBUG in `env`
+     * (an `env` left empty by that is dropped too).
+     *
+     * @param array<mixed> $data
+     * @return array<mixed>
+     * @author michtio
+     */
+    private function unowned(array $data): array
+    {
+        unset($data['laravel']);
+        $env = $data['env'] ?? null;
+
+        if (is_array($env)) {
+            $env = array_is_list($env)
+                ? array_values(array_filter($env, static fn (mixed $item): bool => ! (is_string($item) && str_starts_with($item, 'APP_DEBUG='))))
+                : array_diff_key($env, ['APP_DEBUG' => true]);
+            $data['env'] = $env;
+
+            if ($env === []) {
+                unset($data['env']);
+            }
+        }
+
+        return $data;
     }
 
     /**

@@ -31,6 +31,7 @@ The brief gives you the slice id, its R ids with their acceptance criteria verba
 - A MUST with no acceptance criterion gets a test named by its R id, marked `R-only` in the hand-back and reported as a spec gap.
 - A dependency the slice adds stays with the builder, never in the gate commit; a temporary install, to report the red reasons with and without it, restores `composer.json` and `composer.lock` afterwards.
 - An optional passability probe (a throwaway spike or a direct library call) is never committed: revert it and see `git status` clean before the commit; its result goes on `Passability:`.
+- The contract you write never forbids the builder's own tests: under G3 the builder may add test files, each failing first; forbid only edits to your gate files and to the test config.
 - Constraints that other locked tests put on the builder (where code can go, names they already pin) go on `Constraints:` in the hand-back.
 
 ## Test design

@@ -173,9 +173,12 @@ DOCKER;
     /**
      * The secret scan step: gitleaks with the project config. Without gitleaks it
      * skips with a message on the host, and fails in CI and inside DDEV
-     * (`IS_DDEV_PROJECT=true`), where the setup installs it in the web image.
-     * Proven by tests/Profile/S9d1GitleaksTest.php ("fails the secret scan inside
-     * DDEV when gitleaks is missing", "still skips ... on the host").
+     * (`IS_DDEV_PROJECT=true`) when `.ddev/web-build/Dockerfile.gitleaks` exists,
+     * the image addition the setup writes for the DDEV runner; inside DDEV without
+     * it (a project set to the host runner) it skips like the host. Proven by
+     * tests/Profile/S9d1GitleaksTest.php ("fails the secret scan inside DDEV when
+     * gitleaks is missing", "still skips ... on the host") and
+     * tests/Profile/SecretScanTest.php.
      *
      * @author michtio
      */
@@ -185,8 +188,9 @@ DOCKER;
 #!/bin/sh
 # Written by claude-skills:setup. The secret scan step of `composer test`.
 # Runs gitleaks with .gitleaks.toml. Without gitleaks it skips on the host and
-# fails in CI (the CI variable set) and inside DDEV, whose web image the setup
-# installs it into, so neither passes without the scan.
+# fails in CI (the CI variable set), and inside DDEV when the setup's web image
+# addition (.ddev/web-build/Dockerfile.<tool>) exists, so neither passes without
+# the scan.
 
 if command -v gitleaks >/dev/null 2>&1; then
     exec gitleaks detect --source . --config .gitleaks.toml --no-banner
@@ -197,7 +201,9 @@ if [ -n "${CI:-}" ]; then
     exit 1
 fi
 
-if [ "${IS_DDEV_PROJECT:-}" = "true" ]; then
+tool=gitleaks
+
+if [ "${IS_DDEV_PROJECT:-}" = "true" ] && [ -f ".ddev/web-build/Dockerfile.${tool}" ]; then
     echo "gitleaks is missing in the DDEV web container: run ddev restart to rebuild the web image with it" >&2
     exit 1
 fi

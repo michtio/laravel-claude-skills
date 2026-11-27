@@ -67,7 +67,7 @@ final class Verdicts
     /**
      * The register with the verdicts of `<root>/.ai/skills-profile.json` merged over
      * it by package name: the profile's entry replaces the row, new packages are added.
-     * Public API for a team tool that reads the effective register.
+     * Contract API (tests/Profile/CONTRACT.md), proven by tests/Profile/ProfileVerdictsTest.php.
      *
      * @api
      * @return array<string, array{use: string, reason: string, conditions: string, checked: string}>
