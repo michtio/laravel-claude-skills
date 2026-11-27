@@ -13,10 +13,11 @@ Contracts the builder implements:
   authorization.md, population.md, pii-logs.md, edge-validation.md, docs-claims.md.
   Each carries a gap line, SKILL.md links each, and each says which check covers it
   or the words "review only". authorization and population are review only.
-  edge-validation names NoEnvOutsideConfigRule, NoCastOnEnvRule, NoUnescapedLikeRule;
+  edge-validation names NoUnescapedLikeRule and Larastan's noEnvCallsOutsideOfConfig, and
+  says the cast pitfall is review only (owner ruling 2026-11-27, plan AD9);
   pii-logs names NoPayloadInLogRule.
 * Rules in Michtio\\LaravelClaudeSkills\\PHPStan\\Rules, registered in extension.neon.
-  Messages end "See laravel-pitfalls: edge-validation." (three env/cast/like rules)
+  Messages end "See laravel-pitfalls: edge-validation." (the like rule)
   and "See laravel-pitfalls: pii-logs." (log rule).
 * Every published pitfall id has a `## <id>` section in internal-docs/pitfall-sources.md
   (git-ignored; that assertion is skipped when the file is absent, as in CI).
@@ -32,7 +33,7 @@ SKILL_DIR = REPO / "resources/boost/skills/laravel-pitfalls"
 REFS = ["authorization", "population", "pii-logs", "edge-validation", "docs-claims"]
 REVIEW_ONLY = ["authorization", "population"]
 RULES = {
-    "edge-validation": ["NoEnvOutsideConfigRule", "NoCastOnEnvRule", "NoUnescapedLikeRule"],
+    "edge-validation": ["NoUnescapedLikeRule", "noEnvCallsOutsideOfConfig"],
     "pii-logs": ["NoPayloadInLogRule"],
 }
 GAP = re.compile(r"^Gap: (not covered by Boost|covered partly by Boost \(\S.*\))\s*$", re.MULTILINE)
@@ -78,12 +79,19 @@ class PitfallFacts(unittest.TestCase):
             with self.subTest(ref=name):
                 self.assertNotRegex(ref(name), r"\bNo\w+Rule\b")
 
-    def test_extension_neon_registers_the_four_rules(self):
+    def test_edge_validation_says_the_cast_pitfall_is_review_only(self):
+        self.assertRegex(ref("edge-validation"), r"(?i)review only")
+
+    def test_extension_neon_registers_exactly_the_three_rules(self):
         neon = (REPO / "extension.neon").read_text(encoding="utf-8")
-        for rules in RULES.values():
-            for rule in rules:
-                with self.subTest(rule=rule):
-                    self.assertIn(NS + rule, neon)
+        registered = set(re.findall(r"(?m)^\s*-\s*(\S+)\s*$", neon))
+        self.assertEqual(
+            registered,
+            {NS + "NoSideEffectInTransactionRule", NS + "NoUnescapedLikeRule", NS + "NoPayloadInLogRule"},
+        )
+        for dropped in ("NoEnvOutsideConfigRule", "NoCastOnEnvRule"):
+            with self.subTest(rule=dropped):
+                self.assertNotIn(dropped, neon)
 
     def test_every_published_pitfall_has_a_source_entry(self):
         sources = REPO / "internal-docs/pitfall-sources.md"
