@@ -7,7 +7,6 @@ namespace Michtio\LaravelClaudeSkills\Setup\Planners;
 use Michtio\LaravelClaudeSkills\Setup\PlannedFile;
 use Michtio\LaravelClaudeSkills\Setup\Project;
 use Symfony\Component\Process\Process;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Writes `.github/workflows/claude-skills-gate.yml` when the profile sets
@@ -17,13 +16,17 @@ use Symfony\Component\Yaml\Yaml;
  *
  * The workflow does not depend on the runner (CI never runs DDEV), so changing the
  * runner never changes it. It follows the project:
- * - PHP, first match wins: the X.Y of `php_version` in the DDEV config
- *   (`.ddev/config.yaml` and its `config.*.yaml` overrides), of composer.json
- *   `config.platform.php`, the lowest X.Y of `require.php`, else 8.4;
+ * - PHP: the profile's `laravel.php_matrix` list as a matrix job; on `auto`, a
+ *   package tests every minor from the floor of `require.php` to the latest the
+ *   setup knows (PHP_MINORS), and an app one version, first match wins: the X.Y
+ *   of `php_version` in the DDEV config (`.ddev/config.yaml` and its
+ *   `config.*.yaml` overrides), of composer.json `config.platform.php`, the lowest
+ *   X.Y of `require.php`, else 8.4;
  * - push: only to the default branch (origin's HEAD, else git's
  *   `init.defaultBranch`, else `main`; `main` outside a git repository), plus every
  *   pull request; a newer run cancels an older one only for pull requests;
- * - database: for an app whose suite runs on MySQL, MariaDB or PostgreSQL, a
+ * - database: for a suite that runs on MySQL, MariaDB or PostgreSQL (an app, or a
+ *   package on the DDEV test database), a
  *   service container with the test database the PHPUnit pins name (the image of
  *   the DDEV database when `.ddev/config.yaml` exists, else the connection's);
  * - gitleaks: installed from its release, checksum verified, because the secret
@@ -59,6 +62,12 @@ final class WorkflowPlanner implements Planner
     public const DEFAULT_PHP = '8.4';
 
     /**
+     * Every PHP minor the setup knows, oldest first; the last is the latest a package
+     * matrix reaches on `auto`.
+     */
+    public const PHP_MINORS = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5'];
+
+    /**
      * The default branch when git names none.
      */
     public const DEFAULT_BRANCH = 'main';
@@ -76,12 +85,15 @@ final class WorkflowPlanner implements Planner
     // =========================================================================
 
     /**
-     * Take the profile's `laravel.ci` option.
+     * Take the profile's `laravel.ci` and `laravel.php_matrix` options.
      *
+     * @param string|list<string> $phpMatrix `auto`, or the PHP versions to test on.
      * @author michtio
      */
-    public function __construct(private readonly bool $ci)
-    {
+    public function __construct(
+        private readonly bool $ci,
+        private readonly string|array $phpMatrix = 'auto',
+    ) {
     }
 
     /**
@@ -125,6 +137,18 @@ final class WorkflowPlanner implements Planner
             '  gate:',
             '    runs-on: ubuntu-latest',
         ];
+        $matrix = $this->matrix($project);
+
+        if ($matrix !== null) {
+            $lines[] = '    strategy:';
+            $lines[] = '      fail-fast: false';
+            $lines[] = '      matrix:';
+            $lines[] = '        php:';
+
+            foreach ($matrix as $version) {
+                $lines[] = "          - '".$version."'";
+            }
+        }
 
         if ($database !== null) {
             [$image, $port, $user, $password, $name] = $database;
@@ -170,7 +194,7 @@ final class WorkflowPlanner implements Planner
             '',
             '      - uses: shivammathur/setup-php@v2',
             '        with:',
-            "          php-version: '".$this->phpVersion($project)."'",
+            $matrix === null ? "          php-version: '".$this->phpVersion($project)."'" : '          php-version: ${{ matrix.php }}',
             '          coverage: none',
             '',
             '      - name: Find the Composer cache directory',
@@ -212,6 +236,54 @@ final class WorkflowPlanner implements Planner
     // =========================================================================
 
     /**
+     * The PHP versions of the job's matrix, or null for a single version: the
+     * profile's list when it sets one; on `auto`, for a package, every minor from
+     * the floor of require.php (its lowest X.Y, else the default version) to the
+     * latest the setup knows; on `auto`, for an app, none.
+     *
+     * @return list<string>|null
+     * @author michtio
+     */
+    private function matrix(Project $project): ?array
+    {
+        if (is_array($this->phpMatrix)) {
+            return $this->phpMatrix;
+        }
+
+        if (! $project->isPackage()) {
+            return null;
+        }
+
+        $floor = $this->requiredPhp($project) ?? self::DEFAULT_PHP;
+        $versions = array_values(array_filter(
+            self::PHP_MINORS,
+            static fn (string $version): bool => version_compare($version, $floor, '>='),
+        ));
+
+        return $versions === [] ? [$floor] : $versions;
+    }
+
+    /**
+     * The lowest X.Y of composer.json require.php, or null when it names none.
+     *
+     * @author michtio
+     */
+    private function requiredPhp(Project $project): ?string
+    {
+        $composer = $project->composerJson();
+        $constraint = is_array($composer['require'] ?? null) ? ($composer['require']['php'] ?? null) : null;
+
+        if (! is_string($constraint) || preg_match_all('/(\d+)\.(\d+)/', $constraint, $matches, PREG_SET_ORDER) === 0) {
+            return null;
+        }
+
+        $versions = array_map(static fn (array $m): string => $m[1].'.'.$m[2], $matches);
+        usort($versions, static fn (string $a, string $b): int => version_compare($a, $b));
+
+        return $versions[0];
+    }
+
+    /**
      * The PHP version for CI, first match wins: the DDEV php_version, config.platform.php,
      * the lowest X.Y of require.php, the default.
      *
@@ -219,7 +291,7 @@ final class WorkflowPlanner implements Planner
      */
     private function phpVersion(Project $project): string
     {
-        $ddev = $this->ddevConfig($project->root)['php_version'] ?? null;
+        $ddev = $project->ddevConfig()['php_version'] ?? null;
 
         if ((is_string($ddev) || is_int($ddev) || is_float($ddev)) && preg_match('/^(\d+)\.(\d+)/', (string) $ddev, $m) === 1) {
             return $m[1].'.'.$m[2];
@@ -234,16 +306,7 @@ final class WorkflowPlanner implements Planner
             return $m[1].'.'.$m[2];
         }
 
-        $constraint = is_array($composer['require'] ?? null) ? ($composer['require']['php'] ?? null) : null;
-
-        if (! is_string($constraint) || preg_match_all('/(\d+)\.(\d+)/', $constraint, $matches, PREG_SET_ORDER) === 0) {
-            return self::DEFAULT_PHP;
-        }
-
-        $versions = array_map(static fn (array $m): string => $m[1].'.'.$m[2], $matches);
-        usort($versions, static fn (string $a, string $b): int => version_compare($a, $b));
-
-        return $versions[0];
+        return $this->requiredPhp($project) ?? self::DEFAULT_PHP;
     }
 
     /**
@@ -271,7 +334,7 @@ final class WorkflowPlanner implements Planner
         }
 
         $version = null;
-        $ddev = $this->ddevDatabase($project->root);
+        $ddev = $this->ddevDatabase($project);
 
         if ($ddev !== null) {
             [$type, $version] = $ddev;
@@ -284,21 +347,22 @@ final class WorkflowPlanner implements Planner
 
     /**
      * The database type and version of `.ddev/config.yaml` (DDEV's default, MariaDB
-     * 10.11, when the file sets none), or null without a DDEV config or for a type
+     * 10.11, when the file sets none; for a package on the DDEV test database, whose
+     * pins then name mysql, the mysql image), or null without a DDEV config or for a type
      * the workflow has no image for.
      *
      * @return array{0: string, 1: string}|null
      * @author michtio
      */
-    private function ddevDatabase(string $root): ?array
+    private function ddevDatabase(Project $project): ?array
     {
-        if (! is_file($root.'/.ddev/config.yaml')) {
+        if (! is_file($project->root.'/.ddev/config.yaml')) {
             return null;
         }
 
-        $config = $this->ddevConfig($root);
+        $config = $project->ddevConfig();
         $database = is_array($config['database'] ?? null) ? $config['database'] : [];
-        $type = is_string($database['type'] ?? null) ? $database['type'] : 'mariadb';
+        $type = is_string($database['type'] ?? null) ? $database['type'] : ($project->ddevTestDatabase ? 'mysql' : 'mariadb');
         $version = $database['version'] ?? null;
         $version = is_string($version) || is_int($version) || is_float($version) ? (string) $version : null;
 
@@ -307,45 +371,10 @@ final class WorkflowPlanner implements Planner
         }
 
         if ($version === null || preg_match('/^[0-9][0-9.]*$/', $version) !== 1) {
-            $version = isset($database['type']) ? self::DATABASES[$type][1] : '10.11';
+            $version = isset($database['type']) || $project->ddevTestDatabase ? self::DATABASES[$type][1] : '10.11';
         }
 
         return [$type, $version];
-    }
-
-    /**
-     * The DDEV project config: `.ddev/config.yaml` with the `.ddev/config.*.yaml`
-     * overrides merged over it in name order, as DDEV merges them. Empty without a
-     * DDEV config; a file that does not parse is skipped.
-     *
-     * @return array<mixed>
-     * @author michtio
-     */
-    private function ddevConfig(string $root): array
-    {
-        $main = $root.'/.ddev/config.yaml';
-
-        if (! is_file($main)) {
-            return [];
-        }
-
-        $files = glob($root.'/.ddev/config.*.yaml') ?: [];
-        sort($files);
-        $config = [];
-
-        foreach ([$main, ...$files] as $file) {
-            try {
-                $parsed = Yaml::parse((string) file_get_contents($file));
-            } catch (\Throwable) {
-                continue;
-            }
-
-            if (is_array($parsed)) {
-                $config = array_replace_recursive($config, $parsed);
-            }
-        }
-
-        return $config;
     }
 
     /**

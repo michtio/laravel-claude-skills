@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Michtio\LaravelClaudeSkills\Setup;
 
+use Symfony\Component\Yaml\Yaml;
+
 /**
  * The project the setup runs against: its root, its kind and its runner, and the
  * command forms that follow from them.
@@ -17,6 +19,10 @@ namespace Michtio\LaravelClaudeSkills\Setup;
  * artisan commands run as `vendor/bin/testbench <command>`. DDEV only offers
  * `ddev artisan` for projects of type laravel, so other DDEV project types get
  * `ddev exec php artisan`.
+ *
+ * A package normally tests on in-memory sqlite. With the profile's
+ * `laravel.test_database: ddev` a package on DDEV tests on DDEV's db service
+ * instead, as an app does: its connection follows the DDEV database type.
  *
  * @author michtio
  */
@@ -48,25 +54,30 @@ final class Project
         public readonly Kind $kind,
         public readonly Runner $runner,
         public readonly bool $ddevLaravelType = false,
+        public readonly bool $ddevTestDatabase = false,
     ) {
     }
 
     /**
      * Detect kind and runner for the project at the given root. A runner passed in
      * (the profile's `laravel.runner`, when not `auto`) wins over detection.
+     * `$ddevTestDatabase` (the profile's `laravel.test_database: ddev`) moves a
+     * package on DDEV to the DDEV test database; it changes nothing for an app.
      *
      * @author michtio
      */
-    public static function detect(string $root, ?Runner $runner = null): self
+    public static function detect(string $root, ?Runner $runner = null, bool $ddevTestDatabase = false): self
     {
         $root = rtrim($root, '/\\');
         $ddev = $runner === null ? is_dir($root.'/.ddev') : $runner === Runner::Ddev;
+        $kind = self::hasTestbench($root) && is_dir($root.'/workbench') ? Kind::Package : Kind::App;
 
         return new self(
             $root,
-            self::hasTestbench($root) && is_dir($root.'/workbench') ? Kind::Package : Kind::App,
+            $kind,
             $ddev ? Runner::Ddev : Runner::Host,
             $ddev && self::ddevType($root) === 'laravel',
+            $ddevTestDatabase && $ddev && $kind === Kind::Package,
         );
     }
 
@@ -152,13 +163,26 @@ final class Project
     }
 
     /**
-     * The database connection the suite should use: DB_CONNECTION from .env, else
-     * .env.example, else mysql for a DDEV app and sqlite otherwise.
+     * The database connection the suite should use. A package on the DDEV test
+     * database: the DDEV database type (mysql, mariadb, or pgsql for postgres;
+     * mysql when the DDEV config names none). Otherwise DB_CONNECTION from .env,
+     * else .env.example, else mysql for a DDEV app and sqlite otherwise.
      *
      * @author michtio
      */
     public function dbConnection(): string
     {
+        if ($this->ddevTestDatabase) {
+            $database = $this->ddevConfig()['database'] ?? null;
+            $type = is_array($database) && is_string($database['type'] ?? null) ? $database['type'] : 'mysql';
+
+            return match ($type) {
+                'mariadb' => 'mariadb',
+                'postgres' => 'pgsql',
+                default => 'mysql',
+            };
+        }
+
         $env = $this->envValues();
 
         if (isset($env['DB_CONNECTION']) && $env['DB_CONNECTION'] !== '') {
@@ -169,13 +193,49 @@ final class Project
     }
 
     /**
-     * Whether the suite runs on in-memory sqlite (a package, or an sqlite connection).
+     * Whether the suite runs on in-memory sqlite (a package not on the DDEV test
+     * database, or an sqlite connection).
      *
      * @author michtio
      */
     public function usesMemoryDatabase(): bool
     {
-        return $this->isPackage() || $this->dbConnection() === 'sqlite';
+        return ($this->isPackage() && ! $this->ddevTestDatabase) || $this->dbConnection() === 'sqlite';
+    }
+
+    /**
+     * The DDEV project config: `.ddev/config.yaml` with the `.ddev/config.*.yaml`
+     * overrides merged over it in name order, as DDEV merges them. Empty without a
+     * DDEV config; a file that does not parse is skipped.
+     *
+     * @return array<mixed>
+     * @author michtio
+     */
+    public function ddevConfig(): array
+    {
+        $main = $this->root.'/.ddev/config.yaml';
+
+        if (! is_file($main)) {
+            return [];
+        }
+
+        $files = glob($this->root.'/.ddev/config.*.yaml') ?: [];
+        sort($files);
+        $config = [];
+
+        foreach ([$main, ...$files] as $file) {
+            try {
+                $parsed = Yaml::parse((string) file_get_contents($file));
+            } catch (\Throwable) {
+                continue;
+            }
+
+            if (is_array($parsed)) {
+                $config = array_replace_recursive($config, $parsed);
+            }
+        }
+
+        return $config;
     }
 
     /**

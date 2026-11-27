@@ -23,8 +23,13 @@ use Michtio\LaravelClaudeSkills\Setup\SetupException;
  *   no IF NOT EXISTS for databases, plus a `GRANT ALL PRIVILEGES ON DATABASE`.
  * It never uses `exec-host`: nothing runs on the host.
  *
- * Written only for a DDEV application whose suite uses a server database (not a
- * package, not sqlite) on mysql, mariadb or pgsql. Any other application on a
+ * A package on the DDEV test database (`laravel.test_database: ddev`) also gets a
+ * `web_environment` list with DDEV's db host, port and credentials (DB_HOST=db,
+ * DB_PORT, DB_USERNAME=db, DB_PASSWORD=db): a package has no .env that names them,
+ * and they are never forced in the PHPUnit file, so CI sets its own in the job.
+ *
+ * Written only for a DDEV project whose suite uses a server database (an app not
+ * on sqlite, or a package on the DDEV test database) on mysql, mariadb or pgsql. Any other application on a
  * server database gets a notice instead (notice()): the setup cannot create it.
  *
  * @author michtio
@@ -81,14 +86,28 @@ final class DdevDatabasePlanner implements Planner
             return null;
         }
 
-        return implode("\n", [
+        $lines = [
             '# Written by claude-skills:setup: creates the test database '.$project->testDatabase().' in the db',
             '# container on every ddev start (idempotent). DDEV merges .ddev/config.*.yaml files.',
             'hooks:',
             '  post-start:',
             '    - exec: '.json_encode($shell, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
             '      service: db',
-        ])."\n";
+        ];
+
+        if ($project->isPackage()) {
+            array_push(
+                $lines,
+                '# The package has no .env: its suite reaches the db service with DDEV\'s defaults.',
+                'web_environment:',
+                '  - DB_HOST=db',
+                '  - DB_PORT='.($project->dbConnection() === 'pgsql' ? '5432' : '3306'),
+                '  - DB_USERNAME=db',
+                '  - DB_PASSWORD=db',
+            );
+        }
+
+        return implode("\n", $lines)."\n";
     }
 
     /**

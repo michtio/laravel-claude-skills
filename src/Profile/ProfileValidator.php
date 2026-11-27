@@ -15,8 +15,9 @@ use stdClass;
  * `setup`, `craft` and its `answers` and `choices` are objects; `gate_tests` is
  * `locked` or `builder-written`; `builders` and `setup.steps` are lists of objects
  * with string `name` and `command`. The schema leaves `laravel` and `verdicts` as
- * open objects, so their entries are checked here: the five Laravel options and
- * the fields of each verdict.
+ * open objects, so their entries are checked here: the Laravel options (the five
+ * of LARAVEL_DEFAULTS and the three of OPTIONAL_DEFAULTS) and the fields of each
+ * verdict.
  *
  * Unknown keys are allowed at every level (the schema's "unknown keys are kept and
  * ignored"); unknownLaravelKeys() lists the ones under `laravel` so the setup can
@@ -40,6 +41,35 @@ final class ProfileValidator
         'monitoring' => 'none',
         'ci' => false,
     ];
+
+    /**
+     * The Laravel options that are listed by Profile::laravel() only when the profile
+     * sets them, with their defaults, in that order: `test_database` (auto or ddev),
+     * `php_matrix` (auto or a list of X.Y versions) and `test_pins` (name => value
+     * or `env`; empty means no override).
+     */
+    public const OPTIONAL_DEFAULTS = [
+        'test_database' => 'auto',
+        'php_matrix' => 'auto',
+        'test_pins' => [],
+    ];
+
+    /**
+     * Allowed values of `laravel.test_database`.
+     */
+    public const TEST_DATABASES = ['auto', 'ddev'];
+
+    /**
+     * The PHPUnit pins `laravel.test_pins` may name. The database, `APP_ENV` and
+     * live-flag pins decide what the suite reaches, so they cannot be named.
+     */
+    public const PIN_NAMES = ['SESSION_DRIVER', 'CACHE_STORE', 'QUEUE_CONNECTION', 'MAIL_MAILER'];
+
+    /**
+     * The value of a `laravel.test_pins` entry that leaves the pin unforced, so the
+     * shell's value wins and the standard value is only the default.
+     */
+    public const PIN_FROM_ENV = 'env';
 
     /**
      * Allowed values of `laravel.runner`.
@@ -124,7 +154,7 @@ final class ProfileValidator
     }
 
     /**
-     * The keys under `laravel` that are not one of the five options, in file order.
+     * The keys under `laravel` that are not one of the eight options, in file order.
      *
      * @return list<string>
      * @author michtio
@@ -137,7 +167,7 @@ final class ProfileValidator
 
         return array_values(array_filter(
             array_map('strval', array_keys(get_object_vars($profile->laravel))),
-            static fn (string $key): bool => ! array_key_exists($key, self::LARAVEL_DEFAULTS),
+            static fn (string $key): bool => ! array_key_exists($key, self::LARAVEL_DEFAULTS) && ! array_key_exists($key, self::OPTIONAL_DEFAULTS),
         ));
     }
 
@@ -319,7 +349,7 @@ final class ProfileValidator
     }
 
     /**
-     * Check the five Laravel options; other keys are left alone.
+     * Check the Laravel options; other keys are left alone.
      *
      * @throws ProfileException On the first invalid option.
      * @author michtio
@@ -350,6 +380,73 @@ final class ProfileValidator
 
         if (property_exists($laravel, 'ci') && ! is_bool($laravel->ci)) {
             throw ProfileException::field('laravel.ci', 'must be true or false');
+        }
+
+        if (property_exists($laravel, 'test_database') && ! in_array($laravel->test_database, self::TEST_DATABASES, true)) {
+            throw ProfileException::field('laravel.test_database', 'must be one of '.implode(', ', self::TEST_DATABASES));
+        }
+
+        if (property_exists($laravel, 'php_matrix')) {
+            self::phpMatrix($laravel->php_matrix);
+        }
+
+        if (property_exists($laravel, 'test_pins')) {
+            self::testPins($laravel->test_pins);
+        }
+    }
+
+    /**
+     * Check `laravel.php_matrix`: `auto`, or a non-empty list of unique X.Y strings.
+     *
+     * @throws ProfileException On the first invalid value.
+     * @author michtio
+     */
+    private static function phpMatrix(mixed $matrix): void
+    {
+        if ($matrix === 'auto') {
+            return;
+        }
+
+        if (! is_array($matrix) || ! array_is_list($matrix) || $matrix === []) {
+            throw ProfileException::field('laravel.php_matrix', 'must be auto or a non-empty list of PHP versions written as "X.Y" strings');
+        }
+
+        $seen = [];
+
+        foreach ($matrix as $index => $version) {
+            if (! is_string($version) || preg_match('/^\d+\.\d+$/', $version) !== 1) {
+                throw ProfileException::field('laravel.php_matrix.'.$index, 'must be a PHP version written as an "X.Y" string, such as "8.4"');
+            }
+
+            if (in_array($version, $seen, true)) {
+                throw ProfileException::field('laravel.php_matrix.'.$index, 'lists '.$version.' twice');
+            }
+
+            $seen[] = $version;
+        }
+    }
+
+    /**
+     * Check `laravel.test_pins`: an object of allowed pin names, each a plain value
+     * (letters, digits, `_`, `.`, `-`) or `env`.
+     *
+     * @throws ProfileException On the first invalid entry.
+     * @author michtio
+     */
+    private static function testPins(mixed $pins): void
+    {
+        self::object($pins, 'laravel.test_pins');
+
+        foreach (get_object_vars($pins) as $name => $value) {
+            $path = 'laravel.test_pins.'.$name;
+
+            if (! in_array((string) $name, self::PIN_NAMES, true)) {
+                throw ProfileException::field($path, 'cannot be named; only '.implode(', ', self::PIN_NAMES).' can (the database, APP_ENV and live-flag pins stay forced)');
+            }
+
+            if (! is_string($value) || preg_match('/^[A-Za-z0-9_.-]+$/', $value) !== 1) {
+                throw ProfileException::field($path, 'must be `env` or a value of letters, digits, _, . and -');
+            }
         }
     }
 

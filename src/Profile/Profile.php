@@ -36,7 +36,7 @@ final class Profile
      * Hold a validated profile.
      *
      * @param bool $exists Whether the file exists.
-     * @param array<string, mixed> $laravel The six options, profile values over defaults.
+     * @param array<string, mixed> $laravel The five options, profile values over defaults, then the optional ones the profile sets.
      * @param list<array{name: string, command: string}> $steps The extra setup steps, in order.
      * @param array<string, array<string, mixed>> $verdicts The profile's own verdicts, as written.
      * @param list<string> $unknownLaravelKeys Keys under `laravel` that are not options.
@@ -108,7 +108,9 @@ final class Profile
 
     /**
      * The Laravel options: runner, house_style, phpstan_level, monitoring, ci;
-     * profile values merged over the defaults, in that order.
+     * profile values merged over the defaults, in that order. The optional options
+     * (test_database, php_matrix, test_pins) follow, in that order, only when the
+     * profile sets them.
      *
      * @return array<string, mixed>
      * @author michtio
@@ -116,6 +118,24 @@ final class Profile
     public function laravel(): array
     {
         return $this->laravel;
+    }
+
+    /**
+     * Every Laravel option with its effective value: laravel() plus the defaults of
+     * the optional options the profile leaves out, in their stated order.
+     *
+     * @return array<string, mixed>
+     * @author michtio
+     */
+    public function effective(): array
+    {
+        $options = $this->laravel;
+
+        foreach (ProfileValidator::OPTIONAL_DEFAULTS as $key => $default) {
+            $options[$key] ??= $default;
+        }
+
+        return $options;
     }
 
     /**
@@ -185,6 +205,13 @@ final class Profile
             }
         }
 
+        foreach (array_keys(ProfileValidator::OPTIONAL_DEFAULTS) as $key) {
+            if (property_exists($profile->laravel, $key)) {
+                $value = $profile->laravel->{$key};
+                $options[$key] = $value instanceof stdClass ? array_map('strval', get_object_vars($value)) : $value;
+            }
+        }
+
         return $options;
     }
 
@@ -201,7 +228,7 @@ final class Profile
         }
 
         return array_values(array_filter(
-            array_keys(ProfileValidator::LARAVEL_DEFAULTS),
+            [...array_keys(ProfileValidator::LARAVEL_DEFAULTS), ...array_keys(ProfileValidator::OPTIONAL_DEFAULTS)],
             static fn (string $key): bool => property_exists($profile->laravel, $key),
         ));
     }
