@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Michtio\LaravelClaudeSkills\Setup\Planners;
 
+use Michtio\LaravelClaudeSkills\Setup\ComposerRequire;
 use Michtio\LaravelClaudeSkills\Setup\PlannedAction;
 use Michtio\LaravelClaudeSkills\Setup\Project;
-use Symfony\Component\Process\Process;
 
 /**
  * Plans the Composer install of the monitoring package the profile names
@@ -61,30 +61,6 @@ final class MonitoringPlanner implements ActionPlanner
             return [null, []];
         }
 
-        $command = $project->usesDdev() ? ['ddev', 'composer', 'require', $package] : ['composer', 'require', $package];
-
-        return [
-            new PlannedAction(
-                implode(' ', $command),
-                // composer.json is read again: it may have changed since the plan was shown.
-                static fn (): bool => ! Project::detect($project->root)->requires($package),
-                static function (\Closure $output) use ($command, $project): bool {
-                    try {
-                        $process = new Process($command, $project->root);
-                        $process->setTimeout(null);
-                        $process->run(static function (string $type, string $buffer) use ($output): void {
-                            $output($buffer);
-                        });
-                    } catch (\Throwable $exception) {
-                        $output($exception->getMessage()."\n");
-
-                        return false;
-                    }
-
-                    return $process->isSuccessful();
-                },
-            ),
-            [],
-        ];
+        return [ComposerRequire::action($project, $package), []];
     }
 }

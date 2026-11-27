@@ -15,7 +15,7 @@ use stdClass;
  * `setup`, `craft` and its `answers` and `choices` are objects; `gate_tests` is
  * `locked` or `builder-written`; `builders` and `setup.steps` are lists of objects
  * with string `name` and `command`. The schema leaves `laravel` and `verdicts` as
- * open objects, so their entries are checked here: the six Laravel options and
+ * open objects, so their entries are checked here: the five Laravel options and
  * the fields of each verdict.
  *
  * Unknown keys are allowed at every level (the schema's "unknown keys are kept and
@@ -37,7 +37,6 @@ final class ProfileValidator
         'runner' => 'auto',
         'house_style' => true,
         'phpstan_level' => 8,
-        'env_schema' => false,
         'monitoring' => 'none',
         'ci' => false,
     ];
@@ -125,7 +124,7 @@ final class ProfileValidator
     }
 
     /**
-     * The keys under `laravel` that are not one of the six options, in file order.
+     * The keys under `laravel` that are not one of the five options, in file order.
      *
      * @return list<string>
      * @author michtio
@@ -320,7 +319,7 @@ final class ProfileValidator
     }
 
     /**
-     * Check the six Laravel options; other keys are left alone.
+     * Check the five Laravel options; other keys are left alone.
      *
      * @throws ProfileException On the first invalid option.
      * @author michtio
@@ -343,10 +342,6 @@ final class ProfileValidator
             if ($level === null || $level < 0 || $level > 10) {
                 throw ProfileException::field('laravel.phpstan_level', 'must be an integer from 0 to 10');
             }
-        }
-
-        if (property_exists($laravel, 'env_schema') && ! is_bool($laravel->env_schema)) {
-            throw ProfileException::field('laravel.env_schema', 'must be true or false');
         }
 
         if (property_exists($laravel, 'monitoring') && ! in_array($laravel->monitoring, self::MONITORING, true)) {

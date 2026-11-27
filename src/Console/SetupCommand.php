@@ -15,8 +15,10 @@ use Michtio\LaravelClaudeSkills\Setup\Planners\ComposerScriptPlanner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\CoreOverridePlanner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\DdevDatabasePlanner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\HooksPathPlanner;
+use Michtio\LaravelClaudeSkills\Setup\Planners\LarastanPlanner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\McpPlanner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\MonitoringPlanner;
+use Michtio\LaravelClaudeSkills\Setup\Planners\PhpstanPlanner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\PhpunitPlanner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\Planner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\RunnerGuidelinePlanner;
@@ -83,6 +85,7 @@ final class SetupCommand extends Command
         GitFiles::GITLEAKS_CONFIG,
         TestbenchYamlPlanner::PATH,
         WorkflowPlanner::PATH,
+        PhpstanPlanner::PATH,
         ...GitFiles::SKELETON_IGNORES,
         SetupState::PATH,
     ];
@@ -141,14 +144,17 @@ final class SetupCommand extends Command
         $this->line('Runner: '.$project->runner->value);
         $this->showProfile($profile);
 
+        $phpstan = new PhpstanPlanner((int) $options['phpstan_level'], $profile->sets('phpstan_level'));
+
         try {
             PathGuard::assertAllSafe($root, self::OWNED_PATHS);
             $plan = SetupPlan::build(
                 $project,
-                $this->planners($profile),
-                [new HooksPathPlanner(), new MonitoringPlanner((string) $options['monitoring'])],
+                [...$this->planners($profile), $phpstan],
+                [new HooksPathPlanner(), new MonitoringPlanner((string) $options['monitoring']), new LarastanPlanner($phpstan)],
                 $profile->steps(),
             );
+            $phpstanNotice = $phpstan->notice($project);
         } catch (SetupException $exception) {
             $this->error($exception->getMessage());
 
@@ -157,6 +163,10 @@ final class SetupCommand extends Command
 
         foreach ($plan->notices as $notice) {
             $this->warn($notice);
+        }
+
+        if ($phpstanNotice !== null) {
+            $this->line($phpstanNotice);
         }
 
         $databaseNotice = (new DdevDatabasePlanner())->notice($project);

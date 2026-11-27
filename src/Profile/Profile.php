@@ -40,6 +40,7 @@ final class Profile
      * @param list<array{name: string, command: string}> $steps The extra setup steps, in order.
      * @param array<string, array<string, mixed>> $verdicts The profile's own verdicts, as written.
      * @param list<string> $unknownLaravelKeys Keys under `laravel` that are not options.
+     * @param list<string> $explicit The options the profile sets itself.
      * @author michtio
      */
     private function __construct(
@@ -48,6 +49,7 @@ final class Profile
         private readonly array $steps,
         private readonly array $verdicts,
         private readonly array $unknownLaravelKeys,
+        private readonly array $explicit = [],
     ) {
     }
 
@@ -90,6 +92,7 @@ final class Profile
             self::readSteps($decoded),
             self::readVerdicts($decoded),
             ProfileValidator::unknownLaravelKeys($decoded),
+            self::explicitOptions($decoded),
         );
     }
 
@@ -104,8 +107,8 @@ final class Profile
     }
 
     /**
-     * The Laravel options: runner, house_style, phpstan_level, env_schema,
-     * monitoring, ci; profile values merged over the defaults, in that order.
+     * The Laravel options: runner, house_style, phpstan_level, monitoring, ci;
+     * profile values merged over the defaults, in that order.
      *
      * @return array<string, mixed>
      * @author michtio
@@ -113,6 +116,16 @@ final class Profile
     public function laravel(): array
     {
         return $this->laravel;
+    }
+
+    /**
+     * Whether the profile sets this Laravel option itself (rather than leaving the default).
+     *
+     * @author michtio
+     */
+    public function sets(string $option): bool
+    {
+        return in_array($option, $this->explicit, true);
     }
 
     /**
@@ -173,6 +186,24 @@ final class Profile
         }
 
         return $options;
+    }
+
+    /**
+     * The Laravel options the profile sets itself.
+     *
+     * @return list<string>
+     * @author michtio
+     */
+    private static function explicitOptions(stdClass $profile): array
+    {
+        if (! property_exists($profile, 'laravel') || ! $profile->laravel instanceof stdClass) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            array_keys(ProfileValidator::LARAVEL_DEFAULTS),
+            static fn (string $key): bool => property_exists($profile->laravel, $key),
+        ));
     }
 
     /**
