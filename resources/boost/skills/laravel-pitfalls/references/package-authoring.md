@@ -16,7 +16,7 @@ Boost's skills are written for applications. A package runs inside apps it has n
 
 ## Pitfall 2: tagged services that can fail to resolve
 
-`Container::tagged()` stops at the first abstract that throws: its generator resolves each tagged abstract in turn, so one sink whose dependency is missing silently drops every later one. Laravel 13 also has no public list of a tag's abstracts: the map is a protected property, and the contract only has `tagged()`.
+`Container::tagged()` stops at the first abstract that throws: its generator resolves each tagged abstract in turn, so one sink whose dependency is missing aborts the loop with its exception, and a caller that catches around the loop loses every later sink without a trace. Laravel 13 also has no public list of a tag's abstracts: the map is a protected property, and the contract only has `tagged()`.
 
 - Instead: a registry the provider fills through an explicit `register()` method (`$registry->register(SlackSink::class)`), which can resolve each entry on its own and report the one that fails.
 - Or wrap each tagged resolution in a lazy closure at tag time, so resolving one entry never runs the others.
@@ -55,7 +55,7 @@ private function tagMap(Container $container): ?array
 
 ## Pitfall 4: a Testbench script that throws exits 0
 
-A PHP script that boots Testbench's `Application::create()` and then throws still exits with status 0: the framework's exception handler renders the exception for the console and does not set a failing exit code. A parent test that checks only the exit code sees a pass.
+A PHP script that boots Testbench's `Application::create()` and then throws can still exit with status 0 (observed with Testbench 11 on Laravel 13: the exception was rendered for the console and the process exited 0). A parent test that checks only the exit code sees a pass.
 
 - Wrap the script's work in `try { ... } catch (Throwable $e) { fwrite(STDERR, $e->getMessage()); exit(1); }`.
 - The parent requires a result marker (a `RESULT:` line the script prints last), never only the exit code.

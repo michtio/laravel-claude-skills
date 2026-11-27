@@ -227,7 +227,7 @@ With `"laravel": {"ci": true}` the setup writes `.github/workflows/claude-skills
 
 It also installs gitleaks (checksum verified), which the secret scan of `composer test` needs in CI, and, for a suite that runs on MySQL, MariaDB or PostgreSQL (an application, or a package with `"test_database": "ddev"`), starts a database service with the test database.
 
-Extra services follow `ci_services`: `"ci_services": ["redis"]` starts a Redis service (the `redis` image) in the gate job and sets `REDIS_HOST` and `REDIS_PORT` in its env, so a suite that needs Redis runs in CI without a hand edit of the workflow. Any other name is refused. Changing the list plans only the workflow.
+Extra services follow `ci_services`: `"ci_services": ["redis"]` starts a Redis service (the `redis` image) in the gate job and sets `REDIS_HOST` and `REDIS_PORT` in its env, so a suite that needs Redis runs in CI without a hand edit of the workflow. Any other name is refused. It takes effect only with `"ci": true`. Changing the list plans only the workflow.
 
 The PHP versions follow `php_matrix`. A list runs the job once per version, as a matrix (`fail-fast: false`). With `auto`, the default, a package is tested on every PHP minor from the composer.json require.php floor (its lowest X.Y version) up to the latest the setup knows; the DDEV PHP version does not decide it. With `auto`, an application runs one version, the first of: `php_version` in `.ddev/config.yaml` (and its `config.*.yaml` overrides), `config.platform.php` in `composer.json`, the lowest version `require.php` allows, else 8.4, each reduced to X.Y. Changing the matrix plans only the workflow.
 

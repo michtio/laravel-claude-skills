@@ -50,7 +50,7 @@ A per-route middleware that enforces state and records it when missing ("signed 
 
 ## Pitfall 7: laravel/passkeys (pre-1.0)
 
-`laravel/passkeys` 0.x (source repository `laravel/passkeys-server`) facts a consumer relies on; recheck them at each minor (see its register row):
+`laravel/passkeys` 0.x facts a consumer relies on, read from its source at tag v0.3.0 (repository `laravel/passkeys-server`); recheck them at each minor (see its register row):
 
 - Its actions take a `PasskeyUser` contract: the user model implements `PasskeyUser` (the package's trait helps), or the actions do not accept it.
 - `Passkeys::userModel()` drives the migration's foreign key (`foreignIdFor(Passkeys::userModel())`, default `App\Models\User`): set it before the migration runs.
