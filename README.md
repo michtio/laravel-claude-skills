@@ -31,13 +31,13 @@ Until the first tag (`1.0.0-beta.1`) the pack is not on Packagist. Require it fr
 
 ### Boost without prompts
 
-`boost:install` asks with interactive prompts, which an agent shell cannot answer, and with `--no-interaction` on a first run it takes its choices from `boost.json`, which does not exist yet. Seed `boost.json` first, so Boost installs for Claude Code, includes this pack's skills and leaves the Laravel Cloud skill off:
+`boost:install` asks with interactive prompts, which an agent shell cannot answer, and with `--no-interaction` on a first run it takes its choices from `boost.json`, which does not exist yet. The first setup run creates this `boost.json` when the project has none (and never changes one that exists), so Boost installs for Claude Code, includes this pack's skills and leaves the Laravel Cloud skill off:
 
 ```json
 {"agents": ["claude_code"], "packages": ["michtio/laravel-claude-skills"], "cloud": false}
 ```
 
-The steps below run `boost:install --guidelines --skills --mcp --no-interaction`, which needs that seed. To answer Boost's prompts yourself instead, skip the seed and drop the flags from that line.
+The steps below run `boost:install --guidelines --skills --mcp --no-interaction`, which needs that seed. To answer Boost's prompts yourself instead, drop the flags from that line.
 
 ### An app
 
@@ -77,7 +77,9 @@ ddev exec php vendor/bin/testbench claude-skills:setup
 ddev exec php vendor/bin/testbench claude-skills:setup --check
 ```
 
-On the host, drop `ddev exec` (and use `composer` for `ddev composer`). Run `boost:install` only after the first setup: before it, Testbench's `base_path()` is its own `@testbench` skeleton in `vendor/`, and Boost writes its files there instead of into the package.
+On the host, drop `ddev exec` (and use `composer` for `ddev composer`). Run `boost:install` only after the first setup: before it, Testbench's `base_path()` is its own `@testbench` skeleton in `vendor/`, and Boost writes its files there instead of into the package. The setup warns when it finds Boost's files there.
+
+Boost decides whether its guidelines enforce tests with `config('boost.enforce_tests')`, else by running `artisan test --list-tests`, which a package has no `artisan` for, so enforcement stays off in a package. To switch it on, set `config(['boost.enforce_tests' => true]);` in the `register()` method of a provider Testbench loads (the workbench's `WorkbenchServiceProvider`, listed under `providers:` in `testbench.yaml`), then run `boost:install` again. The runner guideline tells agents to run a package's tests with `vendor/bin/pest`, to keep package classes under `src/`, and that `make:` generators write into the skeleton, not into `src/`.
 
 ### After the install
 
@@ -92,7 +94,29 @@ The setup prints these two commands on every run until the project's `.claude/se
 
 When the DDEV PHP version changes (`php_version` in `.ddev/config.yaml`), run `boost:update` (`ddev artisan boost:update`, or `ddev exec php vendor/bin/testbench boost:update` in a package): Boost's guidelines in `CLAUDE.md` keep naming the old PHP version until Boost composes them again. For an app with `"ci": true` and `"php_matrix": "auto"`, also rerun the setup: its CI workflow takes the PHP version from DDEV and refreshes it. A package matrix and a `php_matrix` list do not follow DDEV.
 
+Every setup run also prints suggested `.claude/settings.json` permissions for the project; the setup never writes that file.
+
 A gated pull request (one that carries a `test(gate):` gate commit) merges with a merge commit, never a squash: a squash rewrites the slice into one new commit and removes the gate commit that the lock check compares against, so the gate can no longer be proven untouched.
+
+### Install with skills.sh
+
+The skills alone (`laravel-pitfalls` and `laravel-package-verdicts`) also install through [skills.sh](https://skills.sh), without Composer or Boost, for example in a project that does not run Boost or for another agent:
+
+```sh
+npx skills add michtio/laravel-claude-skills
+```
+
+Add `-a claude-code` to install for Claude Code only (into `.claude/skills/`), and `npx skills update` later to move them to the latest commit. This channel carries the skills and their references only: no guideline, no setup command, no PHPStan rules and no agents. In a Laravel project with Boost, prefer the Composer install above, which keeps the skills in step with the package version.
+
+## Using it with Spatie's guidelines
+
+[spatie/guidelines-skills](https://github.com/spatie/guidelines-skills) ships Spatie's code style for Laravel, PHP and JavaScript as Boost guidelines and skills. The two packages install side by side: their skill names do not overlap, and Boost keys each package's guideline by package name, so neither replaces the other. Spatie's PHP style contradicts this pack's house style (PHPDocs on every method, `@author`, `=========` section headers), so switch the house style off in `.ai/skills-profile.json`:
+
+```json
+{"version": 1, "laravel": {"house_style": false}}
+```
+
+With `"house_style": false` this pack keeps its pitfalls, package verdicts, runner guideline, project files rule and agents, and Spatie's guideline decides the code style. Then require Spatie's package, add `"spatie/guidelines-skills"` to `packages` in `boost.json` (for a non-interactive install), and run `boost:install` again (`ddev artisan boost:install --guidelines --skills --mcp --no-interaction` on DDEV) so Boost composes both.
 
 ## Agents
 

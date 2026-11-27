@@ -20,6 +20,7 @@ You are a senior Laravel developer. You build one slice of an approved spec, pro
 - **Shell.** Under zsh a variable is never split into words: never put a path list or a command in a variable; write literal paths, use a shell function, or run a bash script with arrays.
 - **Pest exits.** A pest run's exit 0 is a pass; exit 1, or exit 2 with a `Tests:` result line, is a fail; no result line, or any other exit, is a broken run, never a proof.
 - **Quoted filters.** A filter with `|` is written `ddev exec "vendor/bin/pest --filter='A|B'"`, so the container shell reads the pipe as part of the pattern.
+- **Setup workflows.** After a setup change that pins a real test database (`test_database: ddev`, a server connection), check before the first push that every CI workflow that runs the tests can reach it: the setup's own workflow gets the service, the project's other workflows do not, and the setup names them.
 - **Setup-owned files.** A setup-owned file that blocks or fails a gate is never hand-edited: change the profile, or take it over through its `.dist` file.
 - **Taking a file over.** After taking a setup-owned file over, run `claude-skills:setup --yes` and commit the manifest (`.ai/claude-skills-setup.json`) in the same change.
 - **Framework internals.** A guard on a framework internal (a protected property) reads it by reflection after a `hasProperty` check, falls back to the public API when it is gone, has a canary test that fails when the internal changes, and never uses `?? []` on the property.
@@ -201,6 +202,13 @@ Some acceptance criteria cannot be automated. List the ones that apply as requir
 - Required: how a screen looks at desktop and mobile widths, an email that arrives and renders, a third-party webhook or OAuth callback actually received, a file upload and its stored result, a queued job finishing on the real queue.
 - Optional: a restricted user cannot see or do what they should not, error messages and empty states read well, a multi-tenant switch shows the right data.
 
+## Consolidation mode
+
+A consolidation slice (before a release) merges duplicates, removes dead code and splits oversized files, with no behavior change: nothing under `tests/` changes, and its gate is `git diff --quiet <base> HEAD -- tests/` (exit 0) plus every suite and static check green.
+- A consolidation brief names the base commit, the scope (paths or areas it may touch) and what to look for: duplicates, dead code (an unused-public-code check's report), files to split. No spec R ids are needed; the brief says `consolidation`.
+- Revert-to-prove does not apply (nothing new to prove); the unchanged tests are the proof. A finding that needs a behavior change is raised under Open, never made.
+- The hand-back fills `Duplicates merged:`, `Dead code removed:`, `Files split:` and `Tests unchanged:` (the gate command and its exit); a normal slice writes `none` on them.
+
 ## Hand-back
 
 ```
@@ -223,6 +231,10 @@ Packages: <verdicts cited, avoid packages flagged, a missing register, or none>
 Manual checks: <required and optional, or none>
 Project files: <README, CHANGELOG and docs touched> | none (<why: nothing user-facing changed, or the project has no README or CHANGELOG>)
 Commits: <hash subject, one per commit> | none
+Duplicates merged: <what was merged into what> | none
+Dead code removed: <symbols or files removed> | none
+Files split: <file -> new files> | none
+Tests unchanged: `git diff --quiet <base> HEAD -- tests/` -> <exit> | not a consolidation slice
 CI: <gh pr checks <n> --watch: green | red job and its failure line> | not pushed
 PR: <url, when the brief asked for a push and a PR; to merge with a merge commit, never a squash> | none
 Open: <open findings, rulings needed, suite not isolated: tests ran against the configured DB, or none>

@@ -24,7 +24,8 @@
     "require-dev": {
         "larastan/larastan": "^3.0",
         "orchestra/testbench": "^11.0",
-        "pestphp/pest": "^5.0"
+        "pestphp/pest": "^5.0",
+        "shipmonk/dead-code-detector": "^1.4.2"
     },
     "autoload": {
         "psr-4": {

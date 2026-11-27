@@ -110,8 +110,9 @@ final class Profile
      * The Laravel options: runner, house_style, phpstan_level, monitoring, ci;
      * profile values merged over the defaults, in that order. The optional options
      * (test_database, php_matrix, test_pins) follow, in that order, only when the
-     * profile sets them.
+     * profile sets them. Public API for a team tool that reads the profile as stored.
      *
+     * @api
      * @return array<string, mixed>
      * @author michtio
      */

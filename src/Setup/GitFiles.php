@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Michtio\LaravelClaudeSkills\Setup;
 
+use Michtio\LaravelClaudeSkills\Setup\Planners\WorkflowPlanner;
+
 /**
  * Content of the fixed files the setup writes: the commit-msg hook, the secret
  * scan step and its gitleaks config, and the .gitignore files of a package's
@@ -30,6 +32,17 @@ final class GitFiles
      * The gitleaks configuration.
      */
     public const GITLEAKS_CONFIG = '.gitleaks.toml';
+
+    /**
+     * The DDEV web image addition that installs the pinned gitleaks.
+     */
+    public const GITLEAKS_DOCKERFILE = '.ddev/web-build/Dockerfile.gitleaks';
+
+    /**
+     * The sha256 of the linux_arm64 archive of the pinned gitleaks, from gitleaks'
+     * own checksums file (the x64 one is WorkflowPlanner::GITLEAKS_SHA256).
+     */
+    public const GITLEAKS_SHA256_ARM64 = 'e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080';
 
     /**
      * The .gitignore files of the directories Laravel needs under a package's own skeleton.
@@ -121,8 +134,44 @@ SH;
     }
 
     /**
-     * The secret scan step: gitleaks with the project config; skipped with a message
-     * locally when gitleaks is missing, required when CI is set.
+     * The DDEV web image addition: installs the gitleaks release the CI workflow
+     * pins, the archive chosen by DDEV's `$TARGETARCH` and checked against
+     * gitleaks' own checksums, so the local scan is the CI scan. DDEV merges
+     * `.ddev/web-build/Dockerfile.*` into the web image; `ddev restart` builds it.
+     *
+     * @author michtio
+     */
+    public static function gitleaksDockerfile(): string
+    {
+        $version = WorkflowPlanner::GITLEAKS_VERSION;
+        $x64 = WorkflowPlanner::GITLEAKS_SHA256;
+        $arm64 = self::GITLEAKS_SHA256_ARM64;
+
+        return <<<DOCKER
+# Written by claude-skills:setup. Installs gitleaks {$version}, the release the
+# CI workflow pins, into the DDEV web image, so the secret scan of
+# `composer test` runs the same locally as in CI. `ddev restart` builds it.
+# The checksums are gitleaks' own (gitleaks_{$version}_checksums.txt).
+RUN set -eu; \
+    case "\${TARGETARCH}" in \
+        amd64) arch=x64; sum={$x64} ;; \
+        arm64) arch=arm64; sum={$arm64} ;; \
+        *) echo "gitleaks: no pinned archive for \${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    archive="gitleaks_{$version}_linux_\${arch}.tar.gz"; \
+    cd /tmp; \
+    curl -sSfL -o "\${archive}" "https://github.com/gitleaks/gitleaks/releases/download/v{$version}/\${archive}"; \
+    echo "\${sum}  \${archive}" | sha256sum -c -; \
+    tar -xzf "\${archive}" -C /usr/local/bin gitleaks; \
+    rm -f "\${archive}"
+
+DOCKER;
+    }
+
+    /**
+     * The secret scan step: gitleaks with the project config. Without gitleaks it
+     * skips with a message on the host, and fails in CI and inside DDEV
+     * (`IS_DDEV_PROJECT=true`), where the setup installs it in the web image.
      *
      * @author michtio
      */
@@ -131,8 +180,9 @@ SH;
         return <<<'SH'
 #!/bin/sh
 # Written by claude-skills:setup. The secret scan step of `composer test`.
-# Runs gitleaks with .gitleaks.toml. Without gitleaks it skips locally and
-# fails in CI (the CI variable set), so CI never passes without the scan.
+# Runs gitleaks with .gitleaks.toml. Without gitleaks it skips on the host and
+# fails in CI (the CI variable set) and inside DDEV, whose web image the setup
+# installs it into, so neither passes without the scan.
 
 if command -v gitleaks >/dev/null 2>&1; then
     exec gitleaks detect --source . --config .gitleaks.toml --no-banner
@@ -140,6 +190,11 @@ fi
 
 if [ -n "${CI:-}" ]; then
     echo "gitleaks is required in CI: install it before running composer test" >&2
+    exit 1
+fi
+
+if [ "${IS_DDEV_PROJECT:-}" = "true" ]; then
+    echo "gitleaks is missing in the DDEV web container: run ddev restart to rebuild the web image with it" >&2
     exit 1
 fi
 

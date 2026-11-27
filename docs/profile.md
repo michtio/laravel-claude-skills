@@ -26,6 +26,16 @@ Every run first prints what it detected, then every effective option with its so
 - `--yes`: apply without asking.
 - `--path=<dir>`: the project root.
 
+Every run also prints suggested `.claude/settings.json` content: `permissions.allow` rules for the gate command (`Bash(composer test)`, or `Bash(ddev composer test)` on DDEV), the test runner and Pint in the runner's form, and the agents plugin's marketplace and `enabledPlugins` entry. The setup never writes `.claude/settings.json`: Claude Code's settings are yours, so merge what you want.
+
+Some lines change nothing on disk and say what to do instead:
+
+- Boost output under the Testbench skeleton (`vendor/orchestra/testbench-core/laravel`): `boost:install` ran before the setup pointed `testbench.yaml` at the package root; run `boost:install` again after the setup.
+- On DDEV, when `CLAUDE.md` names another PHP version than DDEV's `php_version`: run `boost:update` in the runner's form.
+- A hand-edited setup `phpstan.neon` next to your `.dist` config (see PHPStan below).
+- An existing package suite moving to the DDEV database (see Test database below).
+- When the suite runs on a database server: every workflow under `.github/workflows/` the setup does not own that runs the tests without a `services:` block, by name. The setup changes none of them; add a database service to each before the next push.
+
 ## Example
 
 ```json
@@ -101,6 +111,49 @@ A Testbench package tests on in-memory sqlite by default. With `"test_database":
 
 The engine and version come from the `database:` block of `.ddev/config.yaml` when it names both. When it names none, or only a type, the setup asks the installed DDEV (`ddev describe -j` for the project, inside the web container `DDEV_DATABASE`, else the default `ddev config --help` prints), so the pins, the hook and the CI service run what DDEV runs; a version-less block takes the version only when DDEV reports the same type. A version-less `postgres` block uses 17. When DDEV cannot tell, the setup exits 1 and asks for an explicit `database:` block in `.ddev/config.yaml`, writing nothing. When DDEV's default later moves, a rerun plans only the workflow (and the pins when the engine changes). `ddev` on a project that does not run on DDEV (no `.ddev/`, or `"runner": "host"`) is refused with exit 1, and nothing is written.
 
+Moving an existing suite from in-memory sqlite to the DDEV database can break it in two ways, and the setup warns when the package already has tests and the move is not applied yet:
+
+- `already exists`: in-memory sqlite forgets the tables a test creates, MySQL and MariaDB keep them. DDL commits implicitly, so a `RefreshDatabase` transaction cannot undo a `Schema::create()` either, and the next test that creates the table fails with `Table '...' already exists`.
+- `Too many connections`: Testbench builds an application per test, and each one leaves its database connections open until the server refuses new ones.
+
+A base `TestCase` handles both: it refuses any database whose name does not end in `_test` (or is not `:memory:`), drops every table before each test, and disconnects every connection when the test's application is destroyed. Point `tests/Pest.php` at it with `pest()->extend(Tests\TestCase::class)->in(__DIR__);` and add the `Tests\` namespace to `autoload-dev`:
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace Tests;
+
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Orchestra\Testbench\TestCase as Testbench;
+
+abstract class TestCase extends Testbench
+{
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $database = (string) DB::connection()->getDatabaseName();
+
+        if ($database !== ':memory:' && ! str_ends_with($database, '_test')) {
+            throw new \RuntimeException("Refusing to drop the tables of {$database}: not a _test database.");
+        }
+
+        Schema::dropAllTables();
+
+        $this->beforeApplicationDestroyed(function (): void {
+            foreach (array_keys(DB::getConnections()) as $name) {
+                DB::disconnect($name);
+            }
+        });
+    }
+}
+```
+
+This is for tests that create their own tables. A suite on `RefreshDatabase` migrates inside `parent::setUp()` with `migrate:fresh`, which drops the tables itself: keep the `_test` guard and the disconnects there, and leave out `Schema::dropAllTables()`.
+
 ### Test pins
 
 The setup forces the test environment in the PHPUnit file so the suite never reaches the dev database, a real mailer, queue or cache, or a live provider. `test_pins` overrides single pins and nothing else: only `SESSION_DRIVER`, `CACHE_STORE`, `QUEUE_CONNECTION` and `MAIL_MAILER` can be named. The database pins (`DB_CONNECTION`, `DB_DATABASE`, `DB_URL`), `APP_ENV` and the live-provider flags cannot be named, so isolation stays the default; naming one, or a value that is not plain letters, digits, `_`, `.` and `-`, is refused.
@@ -112,6 +165,8 @@ The setup forces the test environment in the PHPUnit file so the suite never rea
 - A value, such as `redis`, replaces the standard one and stays forced (`force="true"`, with the `<server>` twin for `QUEUE_CONNECTION` and `MAIL_MAILER`).
 - `env` writes the pin without force and without a `<server>` twin, with the standard value as its default (`array`, `array`, `sync`, `array`), so a value the shell or `ddev exec env SESSION_DRIVER=file vendor/bin/pest` sets wins, and the default applies when nothing is set. Use it for a gate that runs the same tests under several drivers.
 - Changing or removing a pin plans only that line of the PHPUnit file; a rerun reports `No changes`.
+
+`BCRYPT_ROUNDS` is pinned to `4`, forced, as Laravel's app skeleton does, so every hash a test makes stays fast. A `BCRYPT_ROUNDS` the PHPUnit file already sets without `force` (the stock skeleton line) is left as it is.
 
 ## Extra setup steps
 
@@ -160,6 +215,8 @@ parameters:
 - The paths are those of `app`, `config`, `database` and `routes` that exist, in that order; when none exists, `src` if it exists, else `app`. A Testbench package gets those of `src`, `tests` and `workbench/app` that exist, in that order (`tests` also when the same run creates `tests/Pest.php`), so a fresh package with an empty `src` still has files to check and no missing path fails the gate.
 - If Larastan is not required yet, the plan adds `composer require --dev larastan/larastan` (`ddev composer require --dev larastan/larastan` on DDEV), run after the other commands and before the extra steps. Larastan is never removed.
 - An existing `phpstan.neon`, `phpstan.neon.dist` or `phpstan.dist.neon` that the setup did not write is never changed, and nothing is installed for it: the setup prints `Left alone: <file>` on every run. A `phpstan.neon` the setup wrote earlier is removed (if unchanged) once you add one of your own, so it cannot shadow yours.
+- To take PHPStan over, create `phpstan.neon.dist` with your config and delete the setup's `phpstan.neon` in the same change, then run `claude-skills:setup --yes` and commit `.ai/claude-skills-setup.json` with it. `--check` exits 0 after the takeover: the stale record of the deleted file stays until the next real change.
+- Shadowing: PHPStan reads `phpstan.neon` first, then `phpstan.neon.dist`, then `phpstan.dist.neon`, so a leftover `phpstan.neon` shadows your `phpstan.neon.dist` and it is never read. When the setup's copy was edited by hand, it is not removed: the setup prints a line saying it shadows your `.dist` on every run until you delete it, and never deletes a hand edit itself. A `phpstan.neon` you wrote yourself (one that includes the `.dist`, PHPStan's local override) is never named.
 - The written file is owned like every setup file: a rerun reports `No changes`, and changing `phpstan_level` plans only that file. If you edit or replace it, the plan says `edited by hand: phpstan.neon` and `phpstan.neon: applying replaces your changes with level <n>`; nothing is written without your confirmation. To keep your own config, rename it to `phpstan.neon.dist` or `phpstan.dist.neon`: the setup then leaves it alone.
 - With `phpstan/extension-installer` in `require` or `require-dev`, the file has no `includes` block: the installer already includes Larastan and this pack, and including them again makes PHPStan fail with "included multiple times". Adding or removing the installer later plans that change to `phpstan.neon` like any other refresh.
 
@@ -173,6 +230,13 @@ The PHP versions follow `php_matrix`. A list runs the job once per version, as a
 
 The setup owns the file like every file it writes: the plan shows it as a diff, a copy you changed is reported as `edited by hand: .github/workflows/claude-skills-gate.yml` and is only replaced after you confirm.
 
+## Secret scan
+
+`composer test` runs `.githooks/gitleaks-check`, gitleaks with `.gitleaks.toml`. In CI the workflow installs the pinned gitleaks; without it the step fails there. On DDEV the setup writes `.ddev/web-build/Dockerfile.gitleaks`, which installs the same gitleaks release into the web image (the archive for the image's architecture, checked against gitleaks' own checksums), so the local scan is the CI scan. Run `ddev restart` once to build it. Inside DDEV a missing gitleaks fails the step and names `ddev restart`; on the host without DDEV it skips with a message.
+
+- Scope: locally `gitleaks detect` reads the whole git history, while CI checks out one commit (`fetch-depth: 1`) and scans only that. A secret removed in a later commit still fails the local scan until the history is rewritten.
+- A historical false positive (a fixture value in an old commit that reads as a key) goes into `.gitleaksignore`, one finding per line by its fingerprint (`<commit>:<file>:<rule>:<line>`, printed by `gitleaks detect`). Never widen `.gitleaks.toml` for it; changing the config is a security decision.
+
 ## Rerun: only the difference
 
 The profile is meant to be updated by a tool and the setup rerun to keep a repository current. A rerun applies only the difference:
@@ -183,9 +247,10 @@ The profile is meant to be updated by a tool and the setup rerun to keep a repos
 
 ## Files created once
 
-Two files are created when they are missing and never touched again, whoever writes into them later:
+Three files are created when they are missing and never touched again, whoever writes into them later:
 
 - `CLAUDE.md`, empty, when Claude Code is one of the agents (`boost.json` is missing or its `agents` lists `claude_code`): Boost writes its guidelines into `AGENTS.md` when `CLAUDE.md` does not exist. When `AGENTS.md` exists without `CLAUDE.md`, the setup says so and leaves `AGENTS.md` alone.
+- `boost.json`, so a non-interactive `boost:install --no-interaction` installs for Claude Code, includes this pack's skills and leaves the Laravel Cloud skill off: `{"agents": ["claude_code"], "packages": ["michtio/laravel-claude-skills"], "cloud": false}`. An existing `boost.json` is never changed and never reported as edited by hand.
 - `tests/Pest.php` in a Testbench package on Pest (`pestphp/pest` required) whose tests pick no base case yet (no `tests/TestCase.php`, no test file calling `uses(`), extending `Orchestra\Testbench\TestCase` for every test, so a fresh package has a suite to run.
 
 A symlinked `tests` folder in a Pest package, or a `CLAUDE.md` that is a dangling symlink or points outside the project, is refused like the setup's other files: exit 1, nothing written. A `CLAUDE.md` symlink to a file inside the project is left alone.

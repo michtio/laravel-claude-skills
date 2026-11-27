@@ -24,6 +24,10 @@ jobs:
         with:
           python-version: "3.12"
 
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
       - name: Deterministic checks
         run: sh scripts/check.sh
 
@@ -42,6 +46,10 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
 
       - uses: shivammathur/setup-php@v2
         with:
@@ -64,6 +72,9 @@ jobs:
 
       - name: PHPStan rule tests
         run: vendor/bin/pest --filter=PHPStan
+
+      - name: Unused public code
+        run: vendor/bin/phpstan analyse -c phpstan-dead-code.neon --no-progress --memory-limit=1G
 
       - name: Full Pest suite (Linux)
         run: vendor/bin/pest

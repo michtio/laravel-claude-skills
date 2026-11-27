@@ -133,6 +133,44 @@ final class PhpstanPlanner implements Planner
     }
 
     /**
+     * The warning that a hand-edited copy of the setup's phpstan.neon shadows the
+     * project's own `.dist` config, or null. PHPStan reads phpstan.neon first, so
+     * the `.dist` is ignored while it exists. A setup copy carries the setup's
+     * header; one still as the setup recorded it is removed by the plan instead.
+     * A phpstan.neon the person wrote (one that includes the `.dist`, PHPStan's
+     * local-override pattern) is never named. Warn only: a hand edit is never deleted.
+     *
+     * @throws SetupException When the state file holds a tampered step.
+     * @author michtio
+     */
+    public function shadowNotice(Project $project): ?string
+    {
+        $current = PlannedFile::read($project->root, self::PATH);
+
+        if ($current === null || ! str_contains($current, 'Written by claude-skills:setup')) {
+            return null;
+        }
+
+        $recorded = SetupState::load($project->root)->recorded(self::PATH);
+
+        if ($recorded !== null && $recorded === SetupState::fingerprint($current)) {
+            return null;
+        }
+
+        foreach (array_slice(self::CONFIG_FILES, 1) as $dist) {
+            if (file_exists($project->root.'/'.$dist)) {
+                return sprintf(
+                    '%1$s shadows %2$s: PHPStan reads %1$s first, and this copy the setup wrote was edited by hand. Move your edits into %2$s and delete %1$s in the same change (docs/profile.md, PHPStan); the setup never deletes a hand edit.',
+                    self::PATH,
+                    $dist,
+                );
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * The config for the project.
      *
      * @author michtio

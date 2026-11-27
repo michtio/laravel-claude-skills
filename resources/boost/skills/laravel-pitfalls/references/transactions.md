@@ -99,6 +99,6 @@ For pitfall 2, force the second step to throw and assert the first step's change
 
 ## Check
 
-`NoSideEffectInTransactionRule` (in `extension.neon`) reports every `Http::` or `Mail::` facade call written inside a closure or arrow function passed to `DB::transaction()`, nested closures included, except inside `DB::afterCommit()`. The message ends with `See laravel-pitfalls: transactions`. Its proof is `tests/PHPStan/Rules/NoSideEffectInTransactionRuleTest.php`: the bad fixture must report each call on its line, and the good fixture (after the transaction, in `DB::afterCommit()`, queued `->afterCommit()`) must report nothing.
+`NoSideEffectInTransactionRule` (in `extension.neon`) reports every `Http::` or `Mail::` facade call written inside a closure or arrow function passed to `DB::transaction()`, nested closures included, except inside `DB::afterCommit()`. The message ends with `See laravel-pitfalls: transactions`. A call after the transaction is not reported.
 
 What the rule cannot see, and review has to: a side effect inside a method that the closure calls, the `DB::beginTransaction()` ... `DB::commit()` form, and pitfall 2.

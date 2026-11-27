@@ -20,6 +20,10 @@ use Michtio\LaravelClaudeSkills\Setup\Planners\Planner;
  * - a file the setup no longer writes is deleted only when it still matches the
  *   recorded fingerprint; a hand-edited one is left in place and forgotten.
  *
+ * The record of a file the setup no longer writes and the person deleted (a
+ * takeover: phpstan.neon.dist created, phpstan.neon deleted) is kept while
+ * nothing else changes, so `--check` exits 0; the next real change drops it.
+ *
  * The state file change is shown with the others and computed again at apply
  * time from the files actually written (stateAfter()), so an aborted run never
  * records a file it did not write.
@@ -76,6 +80,7 @@ final class SetupPlan
     {
         $state = SetupState::load($project->root);
         $settled = [];
+        $stale = [];
         $changes = [];
         $notices = [];
 
@@ -85,6 +90,11 @@ final class SetupPlan
             $handEdited = self::isHandEdited($file, $previous);
 
             if ($file->desired === null) {
+                // A file the person deleted (a takeover through its .dist) keeps its record until a real change.
+                if ($file->current === null && $previous !== null) {
+                    $stale[$file->path] = $previous;
+                }
+
                 if ($file->current === null || $previous === null) {
                     continue;
                 }
@@ -129,6 +139,11 @@ final class SetupPlan
             static fn (array $step): bool => ! $state->ran($step['name'], $step['command']),
         ));
         $keepStepOrder = $pending === [] && $changes === [];
+
+        // Dropping only a stale record is no change of its own: --check stays clean after a takeover.
+        if ($keepStepOrder) {
+            $settled += $stale;
+        }
         $kept = $keepStepOrder ? $state->steps : array_values(array_filter(
             $state->steps,
             static fn (array $record): bool => in_array($record, $profileSteps, true),

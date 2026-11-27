@@ -48,14 +48,4 @@ final class StaticFilePlanner implements Planner
 
         return PlannedFile::whole($project->root, $this->path, $wanted ? $this->content : null, $this->executable);
     }
-
-    /**
-     * The path this planner owns.
-     *
-     * @author michtio
-     */
-    public function path(): string
-    {
-        return $this->path;
-    }
 }

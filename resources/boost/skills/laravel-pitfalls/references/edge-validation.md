@@ -96,6 +96,6 @@ Remove `addcslashes()` and the test goes red: both users match.
 
 - `env()` outside config: Larastan's `noEnvCallsOutsideOfConfig`, on by default. This package registers no rule for it.
 - The cast on `env()` (pitfall 2): review only.
-- `NoUnescapedLikeRule`, in `extension.neon`, ending `See laravel-pitfalls: edge-validation`: reports `where()` and `orWhere()` with a `like` operator, and the `whereLike()` family, when the pattern is a concatenation or an interpolated string that has a part not wrapped in `addcslashes()`, `str_replace()` or an `escapeLike()` method. Proof: `tests/PHPStan/Rules/NoUnescapedLikeRuleTest.php`. A pattern passed as a bare variable is not judged, because that needs data flow.
+- `NoUnescapedLikeRule`, in `extension.neon`, ending `See laravel-pitfalls: edge-validation`: reports `where()` and `orWhere()` with a `like` operator, and the `whereLike()` family, when the pattern is a concatenation or an interpolated string that has a part not wrapped in `addcslashes()`, `str_replace()` or an `escapeLike()` method. A pattern passed as a bare variable is not judged, because that needs data flow.
 
 Pitfall 4 is a review item.

@@ -27,11 +27,6 @@ final class Verdicts
      */
     public const REGISTER = 'resources/boost/skills/laravel-package-verdicts/references/register.md';
 
-    /**
-     * The fields of a verdict, in order.
-     */
-    public const FIELDS = ['use', 'reason', 'conditions', 'checked'];
-
     // Public Methods
     // =========================================================================
 
@@ -72,7 +67,9 @@ final class Verdicts
     /**
      * The register with the verdicts of `<root>/.ai/skills-profile.json` merged over
      * it by package name: the profile's entry replaces the row, new packages are added.
+     * Public API for a team tool that reads the effective register.
      *
+     * @api
      * @return array<string, array{use: string, reason: string, conditions: string, checked: string}>
      * @throws ProfileException When the profile is invalid.
      * @author michtio
