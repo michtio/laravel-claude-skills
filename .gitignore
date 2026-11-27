@@ -13,3 +13,9 @@ __pycache__/
 
 # Specs and research for unreleased work (internal)
 internal-docs/
+
+# Composer lock file (library; consumers resolve their own)
+/composer.lock
+
+# Generated fixture app (bin/make-fixture-app.sh)
+/fixtures/app/

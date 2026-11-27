@@ -1,0 +1,34 @@
+{
+    "name": "michtio/laravel-claude-skills",
+    "description": "Skills, agents and checks for Laravel projects, on top of Laravel Boost.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["laravel", "boost", "claude", "skills", "agents"],
+    "authors": [
+        {
+            "name": "michtio"
+        }
+    ],
+    "require": {
+        "php": "^8.3",
+        "laravel/boost": "^2.5"
+    },
+    "require-dev": {
+        "larastan/larastan": "^3.0",
+        "orchestra/testbench": "^11.0",
+        "pestphp/pest": "^5.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Michtio\\LaravelClaudeSkills\\": "src/"
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
