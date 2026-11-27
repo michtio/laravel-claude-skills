@@ -406,7 +406,7 @@ final class SetupCommand extends Command
             new ComposerScriptPlanner(),
             new DdevDatabasePlanner(),
             new StaticFilePlanner(GitFiles::COMMIT_MSG, GitFiles::commitMsg(), true),
-            new StaticFilePlanner(GitFiles::GITLEAKS_CHECK, GitFiles::gitleaksCheck(), true),
+            new StaticFilePlanner(GitFiles::GITLEAKS_CHECK, static fn (Project $project): string => GitFiles::gitleaksCheck($project->usesDdev()), true),
             new StaticFilePlanner(GitFiles::GITLEAKS_CONFIG, GitFiles::gitleaksConfig()),
             new StaticFilePlanner(GitFiles::GITLEAKS_DOCKERFILE, GitFiles::gitleaksDockerfile(), false, static fn (Project $project): bool => $project->usesDdev()),
             new TestbenchYamlPlanner(),

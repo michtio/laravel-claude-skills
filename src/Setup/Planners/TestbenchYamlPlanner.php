@@ -203,7 +203,8 @@ final class TestbenchYamlPlanner implements Planner
 
     /**
      * The parsed file without the owned values: `laravel`, and APP_DEBUG in `env`
-     * (an `env` left empty by that is dropped too).
+     * (an `env` that is missing, null or left empty by that is dropped, so an
+     * empty `env:` key compares equal to the map it becomes).
      *
      * @param array<mixed> $data
      * @return array<mixed>
@@ -219,10 +220,10 @@ final class TestbenchYamlPlanner implements Planner
                 ? array_values(array_filter($env, static fn (mixed $item): bool => ! (is_string($item) && str_starts_with($item, 'APP_DEBUG='))))
                 : array_diff_key($env, ['APP_DEBUG' => true]);
             $data['env'] = $env;
+        }
 
-            if ($env === []) {
-                unset($data['env']);
-            }
+        if (array_key_exists('env', $data) && ($env === null || $env === [])) {
+            unset($data['env']);
         }
 
         return $data;
@@ -261,7 +262,7 @@ final class TestbenchYamlPlanner implements Planner
 
             $last = $index;
 
-            if (preg_match('/^\s+(- \s*)?["\']?APP_DEBUG\b/', $line) === 1) {
+            if (preg_match('/^\s+(- \s*)?["\']?APP_DEBUG["\']?\s*[:=]/', $line) === 1) {
                 $lines[$index] = $list ? $indent.'- APP_DEBUG=true' : $indent.'APP_DEBUG: true';
 
                 return $lines;

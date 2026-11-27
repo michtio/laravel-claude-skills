@@ -75,3 +75,17 @@ it('does not name a workflow whose test job has a postgres service', function ()
 
     expect(Advisories::workflowsWithoutDatabase(new Project($dir, Kind::App, Runner::Ddev)))->toBeNull();
 });
+
+it('does not name a workflow whose test job has a mysql/mysql-server service', function () {
+    $dir = $this->project('app', ddev: true);
+    workflowAdvisoryPut($dir, 'oracle.yml', "      - run: composer test\n    services:\n      db:\n        image: mysql/mysql-server:8.0\n");
+
+    expect(Advisories::workflowsWithoutDatabase(new Project($dir, Kind::App, Runner::Ddev)))->toBeNull();
+});
+
+it('does not name a workflow whose database image comes from the matrix', function () {
+    $dir = $this->project('app', ddev: true);
+    workflowAdvisoryPut($dir, 'matrix.yml', "      - run: vendor/bin/pest\n    services:\n      db:\n        image: \${{ matrix.database }}\n");
+
+    expect(Advisories::workflowsWithoutDatabase(new Project($dir, Kind::App, Runner::Ddev)))->toBeNull();
+});

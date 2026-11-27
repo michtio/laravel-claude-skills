@@ -25,8 +25,9 @@ use Symfony\Component\Yaml\Yaml;
  *   in-memory sqlite (the move is not applied yet) is told about tables a test
  *   creates (MySQL keeps them) and the connections per-test apps leave open.
  * - Workflows without a database: when the suite runs on a database server,
- *   workflow the setup does not own with a job that runs the tests and has no
- *   mysql, mariadb or postgres service is named, judged per job. None is changed.
+ *   every workflow the setup does not own with a job that runs the tests and has no
+ *   database service (a mysql, mariadb, postgres, postgis or percona image, or one
+ *   set from an expression) is named, judged per job. None is changed.
  *
  * Proven by tests/Profile/S9d1OutputTest.php: "warns when Boost wrote into the
  * @testbench skeleton", "prints the runner-form boost:update", "warns when
@@ -36,7 +37,9 @@ use Symfony\Component\Yaml\Yaml;
  * test command that only appears in a comment line", "reads a single-quoted
  * in-memory DB_DATABASE pin as not yet moved", "names a workflow whose database
  * service is on another job than its tests", "names a workflow whose test job has
- * only a redis service".
+ * only a redis service", "does not name a workflow whose test job has a
+ * mysql/mysql-server service", "does not name a workflow whose database image comes
+ * from the matrix".
  *
  * @author michtio
  */
@@ -61,9 +64,10 @@ final class Advisories
     public const TEST_COMMAND = '/\bvendor\/bin\/(pest|phpunit|paratest)(?![\w:-])|\bartisan test(?![\w:-])|\bcomposer( run(-script)?)? test(?![\w:-])|\btestbench package:test(?![\w:-])/';
 
     /**
-     * A service image that is a database server the suite can run on.
+     * A service image that is a database server the suite can run on (an image
+     * set from an expression, such as a matrix value, counts as one too).
      */
-    public const DATABASE_IMAGE = '/(^|\/)(mysql|mariadb|postgres)(:|$)/i';
+    public const DATABASE_IMAGE = '/(^|\/)(mysql|mariadb|postgres|postgis|percona)[\w.-]*(:|$)/i';
 
     // Public Methods
     // =========================================================================
@@ -262,7 +266,7 @@ final class Advisories
         foreach (is_array($job['services'] ?? null) ? $job['services'] : [] as $service) {
             $image = is_array($service) ? ($service['image'] ?? null) : $service;
 
-            if (is_string($image) && preg_match(self::DATABASE_IMAGE, $image) === 1) {
+            if (is_string($image) && (str_contains($image, '${{') || preg_match(self::DATABASE_IMAGE, $image) === 1)) {
                 return true;
             }
         }

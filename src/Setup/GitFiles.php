@@ -172,26 +172,37 @@ DOCKER;
 
     /**
      * The secret scan step: gitleaks with the project config. Without gitleaks it
-     * skips with a message on the host, and fails in CI and inside DDEV
-     * (`IS_DDEV_PROJECT=true`) when `.ddev/web-build/Dockerfile.gitleaks` exists,
-     * the image addition the setup writes for the DDEV runner; inside DDEV without
-     * it (a project set to the host runner) it skips like the host. Proven by
+     * fails in CI (the CI variable set) and skips with a message elsewhere. For
+     * the DDEV runner it also fails inside the web container (`IS_DDEV_PROJECT=true`),
+     * whose image the setup installs gitleaks into; the host runner's script has
+     * no such branch, so a runner switch replans this owned file. Proven by
      * tests/Profile/S9d1GitleaksTest.php ("fails the secret scan inside DDEV when
      * gitleaks is missing", "still skips ... on the host") and
      * tests/Profile/SecretScanTest.php.
      *
      * @author michtio
      */
-    public static function gitleaksCheck(): string
+    public static function gitleaksCheck(bool $ddev): string
     {
-        return <<<'SH'
+        $head = <<<'SH'
 #!/bin/sh
 # Written by claude-skills:setup. The secret scan step of `composer test`.
-# Runs gitleaks with .gitleaks.toml. Without gitleaks it skips on the host and
-# fails in CI (the CI variable set), and inside DDEV when the setup's web image
-# addition (.ddev/web-build/Dockerfile.<tool>) exists, so neither passes without
-# the scan.
+# Runs gitleaks with .gitleaks.toml. Without gitleaks it fails in CI (the CI
+# variable set), so CI never passes without the scan, and skips elsewhere.
 
+SH;
+
+        $ddevHead = <<<'SH'
+#!/bin/sh
+# Written by claude-skills:setup. The secret scan step of `composer test`.
+# Runs gitleaks with .gitleaks.toml. Without gitleaks it fails in CI (the CI
+# variable set) and inside the DDEV web container, whose image installs it
+# (.ddev/web-build/Dockerfile.gitleaks), so neither passes without the scan; it
+# skips on the host.
+
+SH;
+
+        $run = <<<'SH'
 if command -v gitleaks >/dev/null 2>&1; then
     exec gitleaks detect --source . --config .gitleaks.toml --no-banner
 fi
@@ -201,17 +212,23 @@ if [ -n "${CI:-}" ]; then
     exit 1
 fi
 
-tool=gitleaks
+SH;
 
-if [ "${IS_DDEV_PROJECT:-}" = "true" ] && [ -f ".ddev/web-build/Dockerfile.${tool}" ]; then
+        $inDdev = <<<'SH'
+if [ "${IS_DDEV_PROJECT:-}" = "true" ]; then
     echo "gitleaks is missing in the DDEV web container: run ddev restart to rebuild the web image with it" >&2
     exit 1
 fi
 
+SH;
+
+        $skip = <<<'SH'
 echo "gitleaks not found, skipping the secret scan (install gitleaks to run it locally)"
 exit 0
 
 SH;
+
+        return $ddev ? $ddevHead.$run.$inDdev.$skip : $head.$run.$skip;
     }
 
     /**
