@@ -11,6 +11,10 @@
 #   agent-budget   scripts/agent_budget.py (48 KB startup, checker 16 KB, agent caps <= 5,
 #                  no Agent on checkers or the gate writer, tinker, record-rule and
 #                  write tools disallowed on read-only agents, no xhigh reviewers)
+#   gap lines      scripts/check_pitfalls.py (every laravel-pitfalls reference carries
+#                  "Gap: not covered by Boost" or "Gap: covered partly by Boost (<rule>)")
+#   deny list      scripts/check_deny_list.py (no git-tracked file names a term from the
+#                  git-ignored internal-docs/deny-list.txt; skipped when it is absent)
 #   symbols        scripts/laravel_source.py check (every Illuminate class, facade, method,
 #                  artisan command and config key the skills and agents name exists in the
 #                  pinned laravel/framework; index in scripts/data/, refreshed with network
@@ -69,6 +73,8 @@ must_fail() {
 gate      "frontmatter (resources/boost/skills)" bash scripts/validate-skills.sh
 gate      "agent startup budget (48 KB; checker 16 KB; caps <= 5; read-only tool rules)" python3 scripts/agent_budget.py
 gate      "symbols (resources/boost/skills, agents) exist in laravel/framework $(cat scripts/data/laravel-source-tag.txt 2>/dev/null)" python3 scripts/laravel_source.py check resources/boost/skills agents
+gate      "gap lines (every laravel-pitfalls reference names its Boost gap)" python3 scripts/check_pitfalls.py
+gate      "deny list (published tree names no client, app, company or person; skipped without internal-docs/deny-list.txt)" python3 scripts/check_deny_list.py
 
 # Self-tests: each check fails on its bad fixture, and passes on the valid one.
 must_fail "agent self-test (Agent tool, no cap line)" "Agent tool without an 'At most N agents per run|review' line" python3 scripts/agent_budget.py --root evals/fixtures/agent-no-cap
@@ -95,6 +101,12 @@ gate      "symbols pass on evals/fixtures/symbol-valid" python3 scripts/laravel_
 must_fail "pitfall self-test (reference without a gap line)" "no gap line" python3 scripts/check_pitfalls.py --root evals/fixtures/pitfall-no-gap
 must_fail "pitfall self-test (covered partly, no Boost rule named)" "names no Boost rule" python3 scripts/check_pitfalls.py --root evals/fixtures/pitfall-partly-no-rule
 gate      "pitfall rules pass on evals/fixtures/pitfall-valid" python3 scripts/check_pitfalls.py --root evals/fixtures/pitfall-valid
+# Deny-list self-test: a throwaway tree whose one file names its one term.
+deny_fixture=$(mktemp -d)
+trap 'rm -f "$log"; rm -rf "$deny_fixture"' EXIT
+printf 'placeholder-client-name\n' > "$deny_fixture/deny-list.txt"
+printf 'Built for Placeholder-Client-Name.\n' > "$deny_fixture/README.md"
+must_fail "deny-list self-test (published file names a deny-listed term)" "names a deny-listed term" python3 scripts/check_deny_list.py --root "$deny_fixture" --list "$deny_fixture/deny-list.txt"
 gate      "agent rules pass on evals/fixtures/valid" python3 scripts/agent_budget.py --root evals/fixtures/valid
 gate      "skill rules pass on evals/fixtures/valid" bash scripts/validate-skills.sh --root evals/fixtures/valid
 
