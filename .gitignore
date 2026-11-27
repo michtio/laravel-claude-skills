@@ -17,5 +17,5 @@ internal-docs/
 # Composer lock file (library; consumers resolve their own)
 /composer.lock
 
-# Generated fixture app (bin/make-fixture-app.sh)
+# Generated fixture app (scripts/make-fixture-app.sh)
 /fixtures/app/

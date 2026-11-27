@@ -22,10 +22,20 @@ app="$repo/fixtures/app"
 project=lcs-fixture-app
 package=michtio/laravel-claude-skills
 
+force=0
+case "$#:${1:-}" in
+    0:) ;;
+    1:--force) force=1 ;;
+    *)
+        echo "usage: bash scripts/make-fixture-app.sh [--force]" >&2
+        exit 2
+        ;;
+esac
+
 command -v ddev >/dev/null 2>&1 || { echo "ddev is not installed" >&2; exit 1; }
 
 if [ -e "$app" ]; then
-    if [ "${1:-}" != "--force" ]; then
+    if [ "$force" -ne 1 ]; then
         echo "fixtures/app already exists; pass --force to recreate it" >&2
         exit 1
     fi
@@ -52,7 +62,7 @@ services:
 YAML
 ddev start
 
-ddev composer create-project laravel/laravel --no-interaction --prefer-dist .
+ddev composer create-project "laravel/laravel:^13.0" --no-interaction --prefer-dist .
 ddev composer require --dev --no-interaction "laravel/boost:^2.5"
 
 # Path repository to this package, symlinked. Inside the container the app is
@@ -62,7 +72,6 @@ ddev composer config repositories.laravel-claude-skills \
     '{"type": "path", "url": "../package", "options": {"symlink": true}}'
 ddev composer require --dev --no-interaction "$package:@dev"
 
-mkdir -p .claude
 cat > boost.json <<JSON
 {
     "agents": ["claude_code"],

@@ -3,7 +3,13 @@
     "description": "Skills, agents and checks for Laravel projects, on top of Laravel Boost.",
     "type": "library",
     "license": "MIT",
-    "keywords": ["laravel", "boost", "claude", "skills", "agents"],
+    "keywords": [
+        "laravel",
+        "boost",
+        "claude",
+        "skills",
+        "agents"
+    ],
     "authors": [
         {
             "name": "michtio"
@@ -24,6 +30,9 @@
         }
     },
     "config": {
+        "platform": {
+            "php": "8.4.1"
+        },
         "sort-packages": true,
         "allow-plugins": {
             "pestphp/pest-plugin": true

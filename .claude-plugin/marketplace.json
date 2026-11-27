@@ -3,9 +3,7 @@
   "owner": {
     "name": "michtio"
   },
-  "metadata": {
-    "description": "Agents for Laravel projects with independent gates, on top of Laravel Boost."
-  },
+  "description": "Agents for Laravel projects with independent gates, on top of Laravel Boost.",
   "plugins": [
     {
       "name": "laravel-claude-skills",
