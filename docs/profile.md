@@ -69,7 +69,7 @@ An invalid profile is refused before anything is planned: the setup exits 1 with
 |---|---|---|---|
 | `version` | integer, required | setup | The profile format version. Always `1`. |
 | `managed_by` | object | nobody (informational) | The tool that wrote the file: `managed_by.tool` and `managed_by.version`, both strings. |
-| `gate_tests` | `locked` or `builder-written` | agents | Who writes the gate tests of a slice: `locked`, a separate gate writer whose tests the builder cannot change, or `builder-written`. With no value, the builder uses `locked` when the test suite is isolated. |
+| `gate_tests` | `locked` or `builder-written` | agents | Who writes the gate tests of a slice: `locked`, a separate gate writer whose tests the builder cannot change, or `builder-written`. With no value, the builder uses `locked` when the test suite is isolated (`phpunit.xml` pins `DB_DATABASE` with `force="true"`). `locked` never applies to a suite that is not isolated: the builder then says `Gate flow: builder-written (no isolated suite)`. |
 | `builders` | list of objects | agents | Outside builders, tried in order. Each has a `name` (string), a `command` (string) and an optional `timeout_minutes` (a number above 0). |
 | `setup` | object | setup | Extra project setup. `setup.steps` is the list of extra steps (below). |
 | `verdicts` | object | agents | Package verdicts that take precedence over the package's register (below). |
@@ -103,7 +103,7 @@ Booleans must be JSON booleans and `phpstan_level` a JSON integer: `"false"`, `0
 
 ## Package verdicts
 
-The package ships a register of verdicts on common Laravel packages (the `laravel-package-verdicts` skill): for each package its use (`use`, `avoid` or `depends`), the reason, the conditions and the date it was last checked. Agents consult it before proposing a package.
+The package ships a register of verdicts on common Laravel packages (the `laravel-package-verdicts` skill): for each package its use (`use`, `avoid` or `depends`), the reason, the conditions and the date it was last checked. The planner and the builder consult it before proposing or adding a package, cite a verdict as `<package>: <use> (<reason>)`, and ask for a ruling instead of adopting a package it says to avoid; the builder also flags an avoided package already in `composer.json`.
 
 Profile verdicts take precedence over the register. They are matched by package name: a profile entry replaces the register row for that package as a whole (a `conditions` or `checked` it leaves out is empty, not inherited from the row), and a package only the profile names is added. Each entry has:
 
