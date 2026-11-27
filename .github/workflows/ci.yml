@@ -29,3 +29,41 @@ jobs:
 
       - name: Gate unit tests
         run: python3 -m unittest discover -s tests/gate
+
+  rules:
+    name: PHP rule tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          tools: composer:v2
+          coverage: none
+
+      - id: composer-cache
+        name: Locate composer cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v6
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress
+
+      - name: PHPStan rule tests
+        run: vendor/bin/pest --filter=PHPStan
+
+      - name: Gate unit tests with the rule suite
+        run: python3 -m unittest discover -s tests/gate
