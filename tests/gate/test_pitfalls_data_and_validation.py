@@ -38,11 +38,11 @@ class InputAtTheEdge(unittest.TestCase):
                 label="PCRE $ matches before a trailing newline; use \\z or the D modifier")
 
     def test_like_escapes_are_not_portable(self):
-        # Row 125
-        pitfall(self, 125, r"(?-i:ESCAPE)", r"sqlite",
-                label="a LIKE escape needs an explicit ESCAPE clause; sqlite has no default escape character")
+        # Row 125. The ESCAPE clause on SQLite is already in edge-validation; the new part is the alternative.
         pitfall(self, 125, r"str_starts_with", r"(stream|range)",
                 label="for a prefix match prefer streaming with str_starts_with, or a range on the key, over LIKE")
+        pitfall(self, 125, r"(?-i:ESCAPE)", r"sqlite",
+                label="a LIKE escape needs an explicit ESCAPE clause; sqlite has no default escape character")
 
 
 class EnginesAndServices(unittest.TestCase):
