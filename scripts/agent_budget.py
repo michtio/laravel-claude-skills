@@ -20,7 +20,12 @@ Rules (tests/gate/CONTRACT.md section 1):
   - an agent with the Agent tool declares `At most N agents per <run|review>`,
     N <= 5;
   - a `*-checker` or `*-gate-writer` agent never has the Agent tool, and a
-    planner or reviewer without a `tools:` line disallows it;
+    planner or reviewer without a `tools:` line disallows it. One exemption
+    (plan AD12, decided 2026-11-27 after S1): the deep reviewer
+    (`laravel-reviewer-deep`, or any name ending `-reviewer-deep`, in both the
+    file stem and the `name:`) is an orchestrator, so it may inherit Agent;
+    the cap rules below then apply to it, so it still needs a cap line of at
+    most 5. A plain reviewer is never exempt, with or without a cap line;
   - a read-only agent (planner, reviewer, checker or gate-writer) disallows
     mcp__laravel-boost__tinker and mcp__laravel-boost__record-rule (it writes
     .ai/rules);
@@ -159,6 +164,11 @@ def check(agent: Path, skills_dir: Path) -> tuple[str, list[str]]:
     def suffix(*suffixes: str) -> bool:
         return any(label.endswith(s) for label in labels for s in suffixes)
 
+    # The deep reviewer orchestrates lens checkers (plan AD12): exempt from
+    # "a reviewer disallows Agent" by name only, and only when the stem and the
+    # name: both say so. The cap-line rules still apply to it.
+    deep_reviewer = all(label.endswith("-reviewer-deep") for label in labels)
+
     # Agent tool: stated in `tools:` (any form), or inherited when there is no
     # `tools:` line (plan AD3), unless `disallowedTools:` removes it.
     # Only a bare name removes a tool: `Agent(x)` in disallowedTools removes one
@@ -176,7 +186,7 @@ def check(agent: Path, skills_dir: Path) -> tuple[str, list[str]]:
             cap_label = "cap ?"
             problems.append("must not have the Agent tool"
                             + ("" if tools_declared else " (no tools: line, so it inherits Agent; disallow it)"))
-        elif not tools_declared and role("planner", "reviewer"):
+        elif not tools_declared and role("planner", "reviewer") and not deep_reviewer:
             cap_label = "cap ?"
             problems.append("must disallow Agent (no tools: line, so it inherits Agent)")
         else:

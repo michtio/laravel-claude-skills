@@ -15,8 +15,11 @@
   ],
   "agents": [
     "./agents/laravel-builder.md",
+    "./agents/laravel-debugger.md",
     "./agents/laravel-gate-writer.md",
     "./agents/laravel-planner.md",
-    "./agents/laravel-review-checker.md"
+    "./agents/laravel-review-checker.md",
+    "./agents/laravel-reviewer-deep.md",
+    "./agents/laravel-reviewer.md"
   ]
 }

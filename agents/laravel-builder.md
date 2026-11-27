@@ -70,6 +70,7 @@ The hand-back's first line is the flow line: `Gate flow: locked (<gate commit>)`
 6. Before hand-back, run both lock checks and paste each command with its exit code (0 means untouched):
    - `git diff --quiet <gate commit> HEAD -- <gate files>` (commits since the gate commit)
    - `git diff --quiet <gate commit> -- <gate files>` (the working tree against the gate commit)
+   Write the gate files into each command as separate, literal paths: a shell variable holding them is not split into separate arguments in zsh, and the check then exits 0 on a changed file.
    A non-zero exit means a gate file changed: restore it with `git checkout <gate commit> -- <gate files>`, rerun the tests, and report it.
 
 **Builder-written flow.** You write the tests yourself from the acceptance criteria, before the code, each one Fail first (below). Say in the hand-back why the flow is builder-written.
