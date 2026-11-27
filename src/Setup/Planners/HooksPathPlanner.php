@@ -25,7 +25,7 @@ use Symfony\Component\Process\Process;
  *
  * @author michtio
  */
-final class HooksPathPlanner
+final class HooksPathPlanner implements ActionPlanner
 {
     // Constants
     // =========================================================================

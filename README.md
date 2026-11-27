@@ -5,3 +5,5 @@ Skills, agents and checks for Laravel projects, on top of [Laravel Boost](https:
 Boost already ships Laravel best practices, first-party package skills and version-aware documentation search. This package adds only what Boost does not: pitfalls taken from real reviews, mechanical checks for them, a project setup step, and agents with independent gates.
 
 Work in progress. Nothing is released yet.
+
+The project setup (`claude-skills:setup`) reads an optional profile, `.ai/skills-profile.json`: see [docs/profile.md](docs/profile.md).

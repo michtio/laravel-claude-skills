@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Michtio\LaravelClaudeSkills\Setup;
 
-use Michtio\LaravelClaudeSkills\Setup\Planners\HooksPathPlanner;
+use Michtio\LaravelClaudeSkills\Setup\Planners\ActionPlanner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\Planner;
 
 /**
@@ -24,6 +24,11 @@ use Michtio\LaravelClaudeSkills\Setup\Planners\Planner;
  * time from the files actually written (stateAfter()), so an aborted run never
  * records a file it did not write.
  *
+ * Extra steps from the profile are planned when the state has no record of a step
+ * with the same name and command; they run last and are recorded once they ran.
+ * The records of steps no longer in the profile are dropped when the state is
+ * written anyway, never as a change of their own, so removing a step plans nothing.
+ *
  * @author michtio
  */
 final class SetupPlan
@@ -39,6 +44,10 @@ final class SetupPlan
      * @param array<string, string> $settled Path => fingerprint for owned files that need no change.
      * @param array<string, string> $previous Path => fingerprint the state recorded before this run.
      * @param list<PlannedAction> $actions Changes that are not file writes, run after the files.
+     * @param list<array{name: string, command: string}> $steps Extra steps to run, last, in profile order.
+     * @param list<array{name: string, command: string}> $keptSteps Step records the state keeps.
+     * @param list<array{name: string, command: string}> $profileSteps Every step of the profile, for the record order.
+     * @param bool $keepStepOrder Whether the kept records stay exactly as recorded (nothing else changes).
      * @author michtio
      */
     public function __construct(
@@ -47,6 +56,10 @@ final class SetupPlan
         public readonly array $settled = [],
         public readonly array $previous = [],
         public readonly array $actions = [],
+        public readonly array $steps = [],
+        private readonly array $keptSteps = [],
+        private readonly array $profileSteps = [],
+        private readonly bool $keepStepOrder = true,
     ) {
     }
 
@@ -54,11 +67,12 @@ final class SetupPlan
      * Build the plan for a project from its planners and recorded state.
      *
      * @param list<Planner> $planners
-     * @param list<HooksPathPlanner> $actionPlanners
+     * @param list<ActionPlanner> $actionPlanners
+     * @param list<array{name: string, command: string}> $profileSteps The profile's extra steps, in order.
      * @throws SetupException When a planner refuses the project's current state.
      * @author michtio
      */
-    public static function build(Project $project, array $planners, array $actionPlanners = []): self
+    public static function build(Project $project, array $planners, array $actionPlanners = [], array $profileSteps = []): self
     {
         $state = SetupState::load($project->root);
         $settled = [];
@@ -108,8 +122,18 @@ final class SetupPlan
             $changes[] = new FileChange($file->path, $file->current, $file->desired, $handEdited, $notes, $file->desiredFingerprint, $file->executable);
         }
 
-        $plan = new self($changes, $notices, $settled, $state->files);
-        $stateFile = $plan->stateAfter(array_map(static fn (FileChange $change): string => $change->path, $changes));
+        $pending = array_values(array_filter(
+            $profileSteps,
+            static fn (array $step): bool => ! $state->ran($step['name'], $step['command']),
+        ));
+        $keepStepOrder = $pending === [] && $changes === [];
+        $kept = $keepStepOrder ? $state->steps : array_values(array_filter(
+            $state->steps,
+            static fn (array $record): bool => in_array($record, $profileSteps, true),
+        ));
+
+        $plan = new self($changes, $notices, $settled, $state->files, [], $pending, $kept, $profileSteps, $keepStepOrder);
+        $stateFile = $plan->stateAfter(array_map(static fn (FileChange $change): string => $change->path, $changes), $pending);
         $currentState = PlannedFile::read($project->root, SetupState::PATH);
 
         if ($currentState === null || self::normalise($currentState) !== self::normalise($stateFile)) {
@@ -127,7 +151,7 @@ final class SetupPlan
             }
         }
 
-        return new self($changes, $notices, $settled, $state->files, $actions);
+        return new self($changes, $notices, $settled, $state->files, $actions, $pending, $kept, $profileSteps, $keepStepOrder);
     }
 
     /**
@@ -137,7 +161,7 @@ final class SetupPlan
      */
     public function isEmpty(): bool
     {
-        return $this->changes === [] && $this->actions === [];
+        return $this->changes === [] && $this->actions === [] && $this->steps === [];
     }
 
     /**
@@ -146,9 +170,10 @@ final class SetupPlan
      * with what was recorded before, deleted files dropped.
      *
      * @param list<string> $written Paths of the file changes actually applied.
+     * @param list<array{name: string, command: string}> $ranSteps Extra steps that ran in this run.
      * @author michtio
      */
-    public function stateAfter(array $written): string
+    public function stateAfter(array $written, array $ranSteps = []): string
     {
         $files = $this->settled;
 
@@ -170,7 +195,7 @@ final class SetupPlan
             }
         }
 
-        return (new SetupState($files))->render();
+        return (new SetupState($files, $this->stepRecords($ranSteps)))->render();
     }
 
     /**
@@ -185,6 +210,39 @@ final class SetupPlan
 
     // Private Methods
     // =========================================================================
+
+    /**
+     * The step records after this run: the kept records and the steps that ran,
+     * in profile order (or, when nothing else changes, exactly as recorded).
+     *
+     * @param list<array{name: string, command: string}> $ranSteps
+     * @return list<array{name: string, command: string}>
+     * @author michtio
+     */
+    private function stepRecords(array $ranSteps): array
+    {
+        if ($this->keepStepOrder) {
+            $records = $this->keptSteps;
+
+            foreach ($ranSteps as $step) {
+                if (! in_array($step, $records, true)) {
+                    $records[] = $step;
+                }
+            }
+
+            return $records;
+        }
+
+        $records = [];
+
+        foreach ($this->profileSteps as $step) {
+            if ((in_array($step, $this->keptSteps, true) || in_array($step, $ranSteps, true)) && ! in_array($step, $records, true)) {
+                $records[] = $step;
+            }
+        }
+
+        return $records;
+    }
 
     /**
      * Whether a planned file's owned part was changed by someone other than the setup.

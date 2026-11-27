@@ -16,6 +16,9 @@ namespace Michtio\LaravelClaudeSkills\Setup;
  * wrote itself. Generated files carry no marker of their own, so nothing extra
  * leaks into the CLAUDE.md that Boost composes from them.
  *
+ * It also records the profile's extra setup steps that ran (name and command), so
+ * a rerun plans only a step that is new or whose name or command changed.
+ *
  * The file is written only together with the files it describes, shown in the
  * plan like any other change, and meant to be committed so every clone and CI
  * agree on what the setup wrote.
@@ -39,10 +42,13 @@ final class SetupState
      * Create a state from recorded fingerprints.
      *
      * @param array<string, string> $files Path => fingerprint of the content the setup wrote.
+     * @param list<array{name: string, command: string}> $steps The extra steps that ran, in profile order.
      * @author michtio
      */
-    public function __construct(public readonly array $files = [])
-    {
+    public function __construct(
+        public readonly array $files = [],
+        public readonly array $steps = [],
+    ) {
     }
 
     /**
@@ -64,7 +70,33 @@ final class SetupState
             }
         }
 
-        return new self($files);
+        $steps = [];
+
+        if (is_array($decoded) && is_array($decoded['steps'] ?? null)) {
+            foreach ($decoded['steps'] as $step) {
+                if (is_array($step) && is_string($step['name'] ?? null) && is_string($step['command'] ?? null)) {
+                    $steps[] = ['name' => $step['name'], 'command' => $step['command']];
+                }
+            }
+        }
+
+        return new self($files, $steps);
+    }
+
+    /**
+     * Whether an extra step with this name and command was recorded as run.
+     *
+     * @author michtio
+     */
+    public function ran(string $name, string $command): bool
+    {
+        foreach ($this->steps as $step) {
+            if ($step['name'] === $name && $step['command'] === $command) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -101,6 +133,10 @@ final class SetupState
             'about' => 'Written by claude-skills:setup: what it last wrote to each file, to tell its own output from hand edits. Commit this file.',
             'files' => $files === [] ? new \stdClass() : $files,
         ];
+
+        if ($this->steps !== []) {
+            $data['steps'] = $this->steps;
+        }
 
         return json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n";
     }
