@@ -39,7 +39,9 @@ use Symfony\Component\Yaml\Yaml;
  * service is on another job than its tests", "names a workflow whose test job has
  * only a redis service", "does not name a workflow whose test job has a
  * mysql/mysql-server service", "does not name a workflow whose database image comes
- * from the matrix".
+ * from the matrix", "names a workflow whose test job only has a database exporter
+ * service", "does not name a workflow whose test job has a postgis, postgres or
+ * mariadb service".
  *
  * @author michtio
  */
@@ -67,7 +69,7 @@ final class Advisories
      * A service image that is a database server the suite can run on (an image
      * set from an expression, such as a matrix value, counts as one too).
      */
-    public const DATABASE_IMAGE = '/(^|\/)(mysql|mariadb|postgres|postgis|percona)[\w.-]*(:|$)/i';
+    public const DATABASE_IMAGE = '/(^|\/)(mysql|mariadb|postgres|postgis|percona)(-server)?(:|$)/i';
 
     // Public Methods
     // =========================================================================

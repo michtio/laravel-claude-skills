@@ -89,3 +89,17 @@ it('does not name a workflow whose database image comes from the matrix', functi
 
     expect(Advisories::workflowsWithoutDatabase(new Project($dir, Kind::App, Runner::Ddev)))->toBeNull();
 });
+
+it('names a workflow whose test job only has a database exporter service', function () {
+    $dir = $this->project('app', ddev: true);
+    workflowAdvisoryPut($dir, 'exporter.yml', "      - run: composer test\n    services:\n      metrics:\n        image: prom/mysqld-exporter:v0.15.1\n");
+
+    expect(Advisories::workflowsWithoutDatabase(new Project($dir, Kind::App, Runner::Ddev)))->toContain('.github/workflows/exporter.yml');
+});
+
+it('does not name a workflow whose test job has a postgis, postgres or mariadb service', function (string $image) {
+    $dir = $this->project('app', ddev: true);
+    workflowAdvisoryPut($dir, 'db.yml', "      - run: composer test\n    services:\n      db:\n        image: ".$image."\n");
+
+    expect(Advisories::workflowsWithoutDatabase(new Project($dir, Kind::App, Runner::Ddev)))->toBeNull();
+})->with(['postgis/postgis', 'postgres:16', 'mariadb:11']);
