@@ -1,6 +1,6 @@
 # Gate contract: skill content (pitfalls, testing notes, verdicts, agent rules, Spatie learnings)
 
-Slice S9d-2 of the laravel-layer spec. Requirements: R1, R2, R5, R6, R7, R13, R15, R16, R17 (decisions log 2026-11-27: "S9c and S9d", the S9d split, "Learnings from spatie/guidelines-skills", "Human-readable tests", R7 amended, the team rules in the agents). Source: `internal-docs/skills-gaps.md`, rows 1 to 173 (rows 170 to 173 added in round 3, owner ruling: S9d covers every later field-test row). Round 3 also applies the owner's rulings on the first hand-back (section 16). Plan: slice S9d in `internal-docs/specs/2026-11-26-laravel-layer/plan.md`, split as the decisions log records.
+Slice S9d-2 of the laravel-layer spec. Requirements: R1, R2, R5, R6, R7, R13, R15, R16, R17 (decisions log 2026-11-27: "S9c and S9d", the S9d split, "Learnings from spatie/guidelines-skills", "Human-readable tests", R7 amended, the team rules in the agents). Source: `internal-docs/skills-gaps.md`, rows 1 to 177 (owner ruling: S9d covers every later field-test row up to this gate; row 174 is unused after a numbering collision; rows that arrive later go to the next slice). The owner's rulings on the gate writer's hand-backs are written into the sections below. Plan: slice S9d in `internal-docs/specs/2026-11-26-laravel-layer/plan.md`, split as the decisions log records.
 
 The gate is written before the builder starts. The builder implements to this contract and never edits the gate files below or the test configuration; under G3 it may add its own tests, each failing first. A change to a gate file goes back to the gate writer. The builder closes each row in `skills-gaps.md` with the commit that fixed it. Everything earlier slices pinned stays, in particular the S9d-1 docs tests (`ReadmesNeverCiteTests` keeps R7 over every shipped `resources/boost/**/*.md`, the new references included) and `scripts/check.sh`.
 
@@ -29,7 +29,7 @@ Gate files: `tests/gate/skill_content.py` (shared helpers), `tests/gate/test_pit
 A rule counts only when one paragraph or bullet (one line of the file) carries all of its operative words, as in the earlier agent and docs gates. Patterns are case-insensitive, except all-caps tokens (`MUST`, `FAIL`, `SELECT`, `ESCAPE`, `CI`, `TTL`, `UPDATE`, `REPEATABLE READ`, `RESULT:`, `Important`), which match case-sensitively. The exact patterns are in the test files; the sections below name what each one requires.
 
 - **Pitfalls** (`pitfall()`): the line is in a `resources/boost/skills/laravel-pitfalls/references/*.md` file. That file has a valid `Gap:` line (R1), and its section `## <file stem>` in the git-ignored `internal-docs/pitfall-sources.md` has a line citing the row as `skills-gaps row 101` or `skills-gaps rows 119, 120 and 151` (R2). The source half runs where `internal-docs/` exists (the builder's and the reviewer's checkout); a public clone and CI have none, as in the S4 gate. The Spatie config pitfall cites `spatie/guidelines-skills` instead of a row. Which reference (an existing one or a new file) is the builder's choice; a new file gets its `## <stem>` section in the sources file and a link in the SKILL.md index.
-- **Testing notes** (`note()`, round 3 ruling: no new skill, one place): the line is in `resources/boost/skills/laravel-pitfalls/references/testing.md`, which has a valid `Gap:` line, a `## testing` section in `internal-docs/pitfall-sources.md` citing each row, and a link from the SKILL.md index. The agent-rule halves stay in the agent files. Boost's own skills are never edited (R4).
+- **Testing notes** (`note()`, owner ruling: no new skill, one place): the line is in `resources/boost/skills/laravel-pitfalls/references/testing.md`, which has a valid `Gap:` line, a `## testing` section in `internal-docs/pitfall-sources.md` citing each row, and a link from the SKILL.md index. The agent-rule halves stay in the agent files. Boost's own skills are never edited (R4).
 - **Verdicts** (`assert_verdict()`): a five-cell row in `laravel-package-verdicts/references/register.md`, a Use from the allowed set, the stated needles in Reason or Conditions, Checked on or after 2026-11-27.
 - **Agent rules** (`line_in()` on the agent's own file).
 
@@ -39,7 +39,7 @@ Rows 111 (interleave at every store step; the double's add must be atomic; a blo
 
 ## 3. Auth and sessions (`test_pitfalls_auth_and_sessions.py`)
 
-Rows 38 (HMAC over APP_KEY with a fixed label; length-prefix or JSON-encode against collisions; `APP_PREVIOUS_KEYS` rotation; morph map), 102 (`Login` fires for remember-me cookies; skip `viaRemember()`), 105 (`password.confirm` honors `password_timeout`, 3 hours; `password_confirmed_at`), 106 (pitfall half: `PasskeyUser`, `Passkeys::userModel()` and the migration FK, counter 0 on synced passkeys, no challenge storage, routes with `password.confirm` and events with the full user), 145 (guard the write of a framework session key by who is signed in; the Login timing), 148 (collation is case- and accent-insensitive; mail the stored address; `hash_equals` or a binary collation; the review checker's security lens names the stored address and collation), 150 (a remembered sign-in keeps the guest session; clear on every Login; test with a second member's remember cookie).
+Rows 38 (HMAC over APP_KEY with a fixed label; length-prefix or JSON-encode against collisions; `APP_PREVIOUS_KEYS` rotation; morph map), 102 (`Login` fires for remember-me cookies; skip `viaRemember()`), 105 (`password.confirm` honors `password_timeout`, 3 hours; `password_confirmed_at`), 106 (pitfall half: `PasskeyUser`, `Passkeys::userModel()` and the migration FK, counter 0 on synced passkeys, no challenge storage, routes with `password.confirm` and events with the full user), 145 (guard the write of a framework session key by who is signed in; the Login timing), 148 (collation is case- and accent-insensitive; mail the stored address; `hash_equals` or a binary collation; the review checker's security lens names the stored address and collation), 150 (a remembered sign-in keeps the guest session; clear on every Login; test with a second member's remember cookie). Row 170 (revoking one device's remember-me): `logout()` cycles the single `remember_token` on every device, `logoutCurrentDevice()` does not; per-device revocation uses a companion cookie named after `getRecallerName()`; a Login listener cannot refuse a remember-me login, so refuse in middleware; tell the remember path apart with `viaRemember() && getUser() === $event->user`, since `viaRemember` stays true after a failed recaller.
 
 ## 4. Data and validation (`test_pitfalls_data_and_validation.py`)
 
@@ -51,11 +51,13 @@ Rows 37 (a tripwire, never the guarantee; every field, ints included; tested fal
 
 ## 6. Package authoring (`test_package_authoring.py`)
 
-Rows 39 (`tagged()` stops at the first throwing abstract; a registry with `register()`; a lazy closure), 50 and 59 (reflection with `hasProperty`, a public-API fallback and a canary; never `?? []`; an unexpected shape falls back and logs once), 132 (a Testbench script that throws exits 0; require a result marker), 36 as notes (every `illuminate/*` component in `require`; no `composer.lock` in a library; register versus boot; config validated at boot), and verdict rows: `laravel/passkeys` (rows 89, 106: pre-1.0, pin the minor; Use `depends`), `spatie/laravel-package-tools` and `orchestra/testbench` (row 40; `larastan/larastan` is already there), plus a line in the verdicts skill on `illuminate/*` versus `laravel/framework` in `require`.
+Pitfall rows: 39 (`tagged()` stops at the first throwing abstract; a registry with `register()`; a lazy closure), 50 and 59 (reflection with `hasProperty`, a public-API fallback and a canary; never `?? []`; an unexpected shape falls back and logs once), 132 (a Testbench script that throws exits 0; require a result marker), and 36 in any pitfall reference with its source line (every `illuminate/*` component in `require`; no `composer.lock` in a library; register versus boot; config validated at boot; `final` providers; publish tags).
+
+Verdict rows: `laravel/passkeys` with Use exactly `depends` (rows 89, 106: pre-1.0, pin the minor), `spatie/laravel-package-tools` and `orchestra/testbench` (row 40, Use `use` or `depends`; `larastan/larastan` is already there with `use`), plus a line in the laravel-package-verdicts skill on `illuminate/*` versus `laravel/framework` in `require`.
 
 ## 7. Testing notes (`test_testing_notes.py`)
 
-Rows 33 (`@anonymous`; assert on the address, never a bare `@`), 42 (a write rule covers `save(`, `increment(`, `DB::table`; or a query-log listener; a grep test is advisory), 60 (`getPackageProviders` in the base TestCase; the false "not a singleton"), 108 (`TestCaseAlreadyInUse`), 130 (the racer: `Application::create`, a shared start time, a shared store not the array cache, exact counts, `RESULT:`), 135 (`mergeConfigFrom` merges the first level; set nested keys after registering), 144 (`@phpstan-impure` rather than suppressing; a skill or the builder), 153 (`withCredentials()` for cookies on JSON requests), 155 (a `_bin` collation for case-sensitive fixtures), 156 (`app()['env'] = 'production'`; `register(..., true)` reruns boot), 167 (the four resets on one line: `forgetGuards()`, `forgetDrivers()`, `session.store`, `flushQueuedCookies()`; `CookieValuePrefix`; a cookie jar per device), 168 (a single-file run loads no other file's helpers; namespaced classes under `tests/Support`).
+Every note is a line of `laravel-pitfalls/references/testing.md` (section 1), cited by its row in the `## testing` source section. Rows 33 (`@anonymous`; assert on the address, never a bare `@`), 42 (a write rule covers `save(`, `increment(`, `DB::table`; or a query-log listener; a grep test is advisory), 60 (`getPackageProviders` in the base TestCase; the false "not a singleton"), 108 (`TestCaseAlreadyInUse`), 130 (the racer: `Application::create`, a shared start time, a shared store not the array cache, exact counts, `RESULT:`), 135 (`mergeConfigFrom` merges the first level; set nested keys after registering), 144 (`@phpstan-impure` rather than suppressing; in testing.md or the builder), 153 (`withCredentials()` for cookies on JSON requests), 155 (a `_bin` collation for case-sensitive fixtures), 156 (`app()['env'] = 'production'`; `register(..., true)` reruns boot), 167 (the four resets on one line: `forgetGuards()`, `forgetDrivers()`, `session.store`, `flushQueuedCookies()`; `CookieValuePrefix`; a cookie jar per device), 168 (a single-file run loads no other file's helpers; namespaced classes under `tests/Support`), 171 (`travel()` moves Carbon, not file mtimes, so file sessions read back empty; prefer the database session driver), 175 (an in-suite `queue:work` passes `--memory`, because the worker's check reads the whole Pest process; `--stop-when-empty`), 177 (rendering a Boost guideline in a test: `Blade::render()` after hiding backticks and `<?php` behind Boost's placeholders; `setBasePath()` at a root holding the profile).
 
 ## 8. Readable test names (`test_readable_test_names.py`)
 
@@ -68,15 +70,21 @@ Rows 158, 162 and 163, for the gate writer, the builder and the testing notes (d
 
 ## 9. Agent rules (`test_agent_field_learnings.py`)
 
-Gate writer: rows 130 (parallel or concurrent points to the racer), 141 (single-use gates interleave between the read and the update), 152 (a concurrency gate races every write path; "same cost" gets a test or a ruling), 160 (each fix red on its own; model each store semantic, increment creating a key or not), 164 (Redis preflight checks `.ddev/` for the add-on), 168 (shared helpers are `tests/Support` classes; probe the harness with framework-only code). Builder: rows 142 (a second guard, each with a test that disables the other), 161 (environment setup in an existing test, no assertion changed, named in the hand-back). Planner: row 164 (a development service comes with a slice that installs it). Deep reviewer: rows 146 (a constant, table-free `SELECT` for engine behavior; the database manual with its URL), 147 (partly is FAIL; `Test configuration: changed in <commit>, isolation kept or strengthened`; "checker type not registered" as a single-pass reason with the lenses named), 152 (a MUST no test pins is Important).
+Gate writer: rows 130 (parallel or concurrent points to the racer), 141 (single-use gates interleave between the read and the update), 152 (a concurrency gate races every write path; "same cost" gets a test or a ruling), 160 (each fix red on its own; model each store semantic, increment creating a key or not), 164 (Redis preflight checks `.ddev/` for the add-on), 168 (shared helpers are `tests/Support` classes; probe the harness with framework-only code), 175 (a gate running `queue:work` passes `--memory`), 176 (in a test with several assertions, the new-content ones come first, and each printed red reason names new content, not an already-shipped part). Builder: rows 142 (a second guard, each with a test that disables the other), 161 (environment setup in an existing test, no assertion changed, named in the hand-back), 173 (the Revert-to-prove section describes the mutate script in one line: copy, substitute, assert it applied, run the tests, restore, `cmp`). Planner: row 164 (a development service comes with a slice that installs it). Deep reviewer: rows 146 (a constant, table-free `SELECT` for engine behavior; the database manual with its URL), 147 (partly is FAIL; `Test configuration: changed in <commit>, isolation kept or strengthened`; "checker type not registered" as a single-pass reason with the lenses named), 152 (a MUST no test pins is Important).
 
-## 10. Spatie learnings (`test_spatie_learnings.py`)
+## 10. Spatie learnings (`test_spatie_learnings.py`, `HouseStyleNamingHintsTest.php`)
 
-Source: spatie/guidelines-skills 1.1.0 (https://github.com/spatie/guidelines-skills/tree/1.1.0), `spatie-laravel-php` and `spatie-security` references, quoted in the test's docstring. Already shipped by S9d-1 and not gated here: the README skills.sh section and the coexistence section. Gated: the builder's Artisan command rule (progress and a summary); the core guideline's "never mix single-line and multi-line chaining"; event (tense) and listener naming hints in the core guideline or the builder; a pitfall line with `config/services.php` and `config()`, sourced to `spatie/guidelines-skills`; the reviewer's Checks section requires an authorization test for every restricted route; a register row for `spatie/guidelines-skills` (`use` or `depends`, naming `house_style`).
+Source: spatie/guidelines-skills 1.1.0 (https://github.com/spatie/guidelines-skills/tree/1.1.0), `spatie-laravel-php` and `spatie-security` references, quoted in the test's docstring. Already shipped by S9d-1 and not gated here: the README skills.sh section and the coexistence section. Gated:
+- the builder's Artisan command rule (progress and a summary);
+- the core guideline's "never mix single-line and multi-line chaining";
+- event (tense) and listener naming hints inside the core guideline's `@if ($houseStyle)` block and nowhere outside it; `HouseStyleNamingHintsTest` renders the guideline with Blade (backticks and `<?php` hidden as Boost 2.10's `RendersBladeGuidelines::renderContent()` does) against a project root: present with no profile, absent with `"house_style": false`;
+- a pitfall line with `config/services.php` and `config()`, sourced to `spatie/guidelines-skills`, in a reference whose `Gap: covered partly by Boost (...)` line names `rules/config` (Boost's laravel-best-practices config rule) and Larastan's `noEnvCallsOutsideOfConfig`;
+- the reviewer's Checks section requires an authorization test for every restricted route;
+- a register row for `spatie/guidelines-skills` (`use` or `depends`, naming `house_style`).
 
 ## 11. Hygiene (`test_skill_content_hygiene.py`), green by design
 
-`scripts/check_pitfalls.py` exits 0 (every pitfall reference names its gap), and no shipped skill, agent or the core guideline names a field-test project ("Auth Kit", "AuthKit", "auth-kit", "CouchGag"; R2 generalization, not on the deny list).
+`scripts/check_pitfalls.py` exits 0 (every pitfall reference names its gap), and no shipped skill, agent or the core guideline names a field-test project ("Auth Kit", "AuthKit", "auth-kit", "CouchGag"; R2 generalization, not on the deny list). Every pitfall reference is linked from the laravel-pitfalls SKILL.md index.
 
 ## 12. Amendment: S9d1GitleaksTest (row 169)
 
@@ -86,19 +94,20 @@ Source: spatie/guidelines-skills 1.1.0 (https://github.com/spatie/guidelines-ski
 
 | Rows | Where |
 |---|---|
-| 33, 42, 60, 108, 130, 135, 144, 153, 155, 156, 167, 168 | testing notes (130, 168 also gate writer) |
+| 33, 42, 60, 108, 130, 135, 144, 153, 155, 156, 167, 168, 171, 175, 177 | testing notes (130, 168, 175 also gate writer) |
 | 37, 57, 58, 104, 134, 149 | privacy and queues |
-| 38, 102, 105, 106, 145, 148, 150 | auth and sessions (148 also review checker) |
+| 38, 102, 105, 106, 145, 148, 150, 170 | auth and sessions (148 also review checker) |
 | 36, 39, 40, 50 (pitfall recipe), 59, 89 (register row), 106 (verdict), 132 | package authoring |
 | 101, 103, 107, 109, 125, 128 (pitfall half), 143, 164 | data and validation (164 also gate writer and planner) |
 | 111 (pitfall recipe), 112, 115, 119, 120, 121, 131, 141, 151, 154, 159 | cache and concurrency (141 also gate writer) |
-| 142, 146, 147, 152, 160, 161 | agent rules |
+| 142, 146, 147, 152, 160, 161, 173, 176 | agent rules |
 | 158, 162, 163 | readable test names |
 | 157 | not gated: the rule shipped in S9c; the builder closes the row citing the S9c commit (owner ruling) |
 | 1, 4, 5, 10, 12, 14, 15, 16, 32, 41, 51, 124, 127, 129, 133, 136, 140, 165, 166, 169 | closed by S9d-1 |
 | 17, 25, 53, 65, 81, 82 | closed: "rest fixed in S9c" per their status |
 | every other row up to 156 | closed by S9b or S9c |
-| 170, 171, 172, 173 | round 3: auth pitfall, testing note, `CiServicesTest`, builder Revert-to-prove |
+| 172 | extra CI services (section 16) |
+| 174 | unused (numbering collision) |
 
 ## 14. Constraints for the builder
 
@@ -107,22 +116,10 @@ Source: spatie/guidelines-skills 1.1.0 (https://github.com/spatie/guidelines-ski
 - R7 as amended: the new skill content never cites the pack's own tests (`ReadmesNeverCiteTests`, S9d-1).
 - No gate test name contains "PHPStan" in any case (S9d-1 constraint, kept).
 
-## 15. Open
+## 15. Pinned names
 
-Names and placements this gate pins (rename before the build if needed): pitfall content in `laravel-pitfalls/references/` (any file); testing notes in `laravel-pitfalls/references/testing.md`; package-author items in any pitfall reference; the source-line format `skills-gaps row N`; Artisan output in the builder; chaining in the core guideline; naming hints inside the core guideline's house-style block; `laravel.ci_services`, `REDIS_HOST` and a service key `redis` in the gate job; the authorization test in `laravel-reviewer.md` Checks.
+Names and placements this gate pins, accepted by the owner: pitfall content in `laravel-pitfalls/references/` (any file); testing notes in `laravel-pitfalls/references/testing.md`; package-author items in any pitfall reference; the source-line format `skills-gaps row N`; Artisan output in the builder; chaining in the core guideline; naming hints inside the core guideline's house-style block; `laravel.ci_services`, `REDIS_HOST` and a service key `redis` in the gate job; the authorization test in `laravel-reviewer.md` Checks.
 
-Rulings: the first hand-back's are applied in section 16 (later sections win over earlier ones where they differ).
+## 16. Extra CI services (`CiServicesTest.php`)
 
-## 16. Round 3 (owner rulings on the first hand-back)
-
-- `laravel/passkeys`: Use is exactly `depends` (pre-1.0, pin the minor).
-- Row 157: closed by the builder citing the S9c commit; no test.
-- Testing notes: only `laravel-pitfalls/references/testing.md` (see section 1); row 144 accepts testing.md or the builder.
-- Row 36 is a pitfall reference (any file, sourced) and also pins `final` providers and publish tags, which the row names.
-- The config pitfall is "covered partly": the file carrying the `config/services.php` line has a `Gap: covered partly by Boost (...)` line naming `rules/config` (Boost's `laravel-best-practices` config rule) and Larastan's `noEnvCallsOutsideOfConfig`.
-- Naming hints sit inside `@if ($houseStyle)` (the Python gate checks the block; no copy outside it), and `HouseStyleNamingHintsTest` renders the guideline with Blade (backticks and `<?php` hidden as Boost 2.10's `RendersBladeGuidelines::renderContent()` does) against a project root: present by default, absent with `"house_style": false`.
-- Row 170 (auth pitfall): `logout()` cycles the single `remember_token` on every device, `logoutCurrentDevice()` does not; a companion cookie named after `getRecallerName()`; a Login listener cannot refuse a remember-me login, so refuse in middleware; `viaRemember() && getUser() === $event->user`, since `viaRemember` stays true after a failed recaller.
-- Row 171 (testing note): `travel()` moves Carbon, not file mtimes, so file sessions read back empty; prefer the database session driver.
-- Row 172 (setup and profile, `CiServicesTest`): `"laravel": {"ci": true, "ci_services": ["redis"]}` gives the gate job a `redis` service whose image starts with `redis` and a `REDIS_HOST` env key; no "Ignoring unknown profile key: laravel.ci_services" line; a rerun says No changes; on `test_database: ddev` the `database` service stays beside it; without the key no redis service and no `REDIS_HOST` (green by design, paired); a docs/profile.md line names `ci_services` and Redis. The image tag and env values are the builder's.
-- Row 173 (builder): the Revert-to-prove section describes the mutate script in one line (copy, substitute, assert it applied, run the tests, restore, `cmp`).
-- Hygiene: every pitfall reference is linked from the laravel-pitfalls SKILL.md index (green by design).
+Row 172: `"laravel": {"ci": true, "ci_services": ["redis"]}` gives the gate job a `redis` service whose image starts with `redis` and a `REDIS_HOST` env key; no "Ignoring unknown profile key: laravel.ci_services" line; a rerun says No changes; on `test_database: ddev` the `database` service stays beside it; without the key no redis service and no `REDIS_HOST` (green by design, paired with the red tests); a docs/profile.md line names `ci_services` and Redis. The image tag and env values are the builder's.

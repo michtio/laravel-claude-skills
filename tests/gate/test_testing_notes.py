@@ -2,7 +2,8 @@
 HTTP tests with several devices, Pest helper scope.
 
 Requirements R1, R5 (test isolation), R6. Gaps rows 33, 42, 60, 108, 130, 135, 144, 153, 155, 156, 167,
-168 (the skill half) and 171.
+168 (the skill half), 171,
+175 (the skill half) and 177.
 Contract: tests/SkillContent/CONTRACT.md, section "Testing notes".
 
 Every note lives in laravel-pitfalls/references/testing.md (owner ruling: no new skill), which names its
@@ -101,6 +102,24 @@ class TimeTravel(unittest.TestCase):
              label="travel() moves Carbon but not file mtimes, so the file session handler reads a travelled session back empty")
         note(self, r"(database driver|database session)", r"travel", row=171,
              label="prefer the database session driver for time-travel tests, or design for it")
+
+
+class InSuiteWorkers(unittest.TestCase):
+    def test_an_in_suite_queue_work_passes_memory(self):
+        # Row 175
+        note(self, r"queue:work", r"--memory", r"(whole|entire) (Pest )?process", row=175,
+             label="an in-suite queue:work passes --memory: the worker's check reads the whole Pest process's memory")
+        note(self, r"queue:work", r"--stop-when-empty", row=175,
+             label="an in-suite queue:work passes --stop-when-empty (or use Queue::fake() or the sync connection)")
+
+
+class GuidelineRendering(unittest.TestCase):
+    def test_a_boost_guideline_is_rendered_with_boosts_placeholders(self):
+        # Row 177
+        note(self, r"Blade::render\(\)", r"placeholder", r"<\?php", row=177,
+             label="to render a Boost guideline in a test, hide backticks and <?php behind Boost's placeholders before Blade::render()")
+        note(self, r"setBasePath\(\)", r"profile", row=177,
+             label="point app()->setBasePath() at a project root holding the profile the guideline reads")
 
 
 class SeveralDevices(unittest.TestCase):

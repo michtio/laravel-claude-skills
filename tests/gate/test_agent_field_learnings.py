@@ -1,7 +1,7 @@
 """Agent rules from the field test: concurrency gates, mutation proofs, existing tests, dev services,
 helper scope, and the deep reviewer's evidence and report.
 
-Requirements R15, R16, R17. Gaps rows 130, 141, 152, 160, 164 and 168 (gate writer), 142, 161 and 173
+Requirements R15, R16, R17. Gaps rows 130, 141, 152, 160, 164, 168, 175 and 176 (gate writer), 142, 161 and 173
 (builder), 164 (planner), 146, 147 and 152 (deep reviewer).
 Contract: tests/SkillContent/CONTRACT.md, section "Agent rules".
 
@@ -63,6 +63,23 @@ class GateWriterPreflightAndHelpers(unittest.TestCase):
                 label="shared helpers are classes under tests/Support, never functions in another test file")
         line_in(self, self.text(), r"probe", r"harness", r"framework",
                 label="probe the harness with a temporary, uncommitted framework-only test before handing over")
+
+
+class GateWriterAssertionsAndWorkers(unittest.TestCase):
+    def text(self):
+        return agent(self, "laravel-gate-writer")
+
+    def test_an_in_suite_queue_work_passes_memory(self):
+        # Row 175, gate writer half
+        line_in(self, self.text(), r"queue:work", r"--memory",
+                label="a gate that runs queue:work in the suite passes --memory (or fakes the queue)")
+
+    def test_assertions_for_new_content_come_first(self):
+        # Row 176
+        line_in(self, self.text(), r"(several|multiple|more than one) assertions", r"(first|before)", r"(new|not exist|missing|does not exist)",
+                label="in a test with several assertions, the ones for content that does not exist yet come first")
+        line_in(self, self.text(), r"red reason", r"(already.shipped|existing|already there)",
+                label="check each printed red reason names new content, not an already-shipped part")
 
 
 class BuilderRules(unittest.TestCase):
