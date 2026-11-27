@@ -167,6 +167,14 @@ class ProfileDocs(unittest.TestCase):
         self.assertRegex(self.text, r"(?is)test_pins.{0,800}(forced|isolation)")
         self.assertRegex(self.text, r"(?is)(DB_DATABASE|database pins)[^.]{0,200}(cannot|can't|not)[^.]{0,80}(named|overrid|listed)")
 
+    def test_test_pins_documents_the_env_value(self):
+        self.assertRegex(self.text, r"(?is)test_pins.{0,1500}`env`", "document the `env` value of test_pins")
+        self.assertRegex(self.text, r"(?is)`env`[^.]{0,300}(shell|ddev exec|environment)[^.]{0,300}(wins|win|overrid|takes precedence)",
+                         "say a shell or ddev exec environment value wins over an env pin")
+        self.assertRegex(self.text, r"(?is)`env`[^.]{0,400}(without force|not forced|no force|unforced)",
+                         "say an env pin is written without force")
+        self.assertRegex(self.text, r"(?is)`env`[^.]{0,500}default", "say the phpunit default applies when nothing is set")
+
     def test_php_matrix_default_for_a_package(self):
         self.assertRegex(self.text, r"(?is)php_matrix.{0,900}require\.php[^.]{0,200}(floor|lowest)")
 

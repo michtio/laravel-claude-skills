@@ -15,7 +15,13 @@ this package through a path repository, as scripts/make-fixture-app.sh does for 
   2. after `ddev restart` the database s9b_package_test exists on the db service;
   3. a rerun says No changes and --check exits 0;
   4. `composer test` is green, and its Pest test asserts it runs on MySQL database s9b_package_test
-     (not sqlite, not the dev database `db`).
+     (not sqlite, not the dev database `db`);
+  5. the profile's `test_pins: {"SESSION_DRIVER": "env", "QUEUE_CONNECTION": "env"}` lets a shell value
+     through: a fixture test sees `config('session.driver')` as `file` and `config('queue.default')` as
+     `database` under `ddev exec env SESSION_DRIVER=file QUEUE_CONNECTION=database ...`, and `array` and
+     `sync` (the phpunit defaults) without them (row 7, round 1b). The queue case is the sharper one: on
+     the base commit a forced pin also writes a `<server>` twin that beats the shell, while SESSION_DRIVER
+     has no twin and already passes through, so only its unforced element is red there.
 
 The DDEV project is deleted afterwards (`ddev delete -Oy`) and the directory removed, whatever
 the result. The shared lock (ddev_lock) keeps two gate runs from colliding.
@@ -160,6 +166,21 @@ class FreshPackageOnMysql(unittest.TestCase):
     def test_5_the_state_is_still_clean_after_composer_test(self):
         r = self.exec([*SETUP, "--check"])
         self.assertIn("No changes", plain(r.stdout))
+
+
+    # 6
+    def test_6_an_env_pin_lets_the_shell_choose_the_session_driver(self):
+        with self.subTest("the env pin is written without force, with the phpunit default"):
+            self.assertIn('<env name="SESSION_DRIVER" value="array"/>', self.file("phpunit.xml.dist"))
+        shutil.copy(FIXTURE / "tests/SessionDriverTest.php", DIR / "tests/SessionDriverTest.php")
+        shell = self.exec(["env", "SESSION_DRIVER=file", "QUEUE_CONNECTION=database", "S9B_EXPECT_SESSION=file", "S9B_EXPECT_QUEUE=database", "vendor/bin/pest", "--filter=SessionDriver"], expect=None)
+        with self.subTest("shell SESSION_DRIVER and QUEUE_CONNECTION reach the suite"):
+            self.assertEqual(shell.returncode, 0, "shell values did not reach the suite:\n" + tail(shell))
+            self.assertRegex(plain(shell.stdout), r"2 passed")
+        default = self.exec(["vendor/bin/pest", "--filter=SessionDriver"], expect=None)
+        with self.subTest("without the shell value the suite sees the phpunit default, array"):
+            self.assertEqual(default.returncode, 0, "without the shell value the suite must see array:\n" + tail(default))
+            self.assertRegex(plain(default.stdout), r"2 passed")
 
 
 @unittest.skipUnless(shutil.which("ddev") and shutil.which("docker"), "needs ddev and docker")
