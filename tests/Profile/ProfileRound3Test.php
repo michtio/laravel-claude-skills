@@ -220,5 +220,5 @@ it('keeps the workbench package rule: a package with workbench analyses src', fu
     [, $output] = $this->setupRun($dir, ['--yes' => true]);
 
     expect($output)->toContain('Detected: package')
-        ->and(Yaml::parse((string) file_get_contents($dir.'/phpstan.neon'))['parameters']['paths'])->toBe(['src']);
+        ->and(Yaml::parse((string) file_get_contents($dir.'/phpstan.neon'))['parameters']['paths'])->toBe(['src', 'tests']);
 });

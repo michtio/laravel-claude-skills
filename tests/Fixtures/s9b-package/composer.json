@@ -1,0 +1,36 @@
+{
+    "name": "example/s9b-package",
+    "type": "library",
+    "require": {
+        "php": "^8.3",
+        "illuminate/support": "^13.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Example\\S9bPackage\\": "src/"
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "repositories": [
+        {
+            "name": "laravel-claude-skills",
+            "type": "path",
+            "url": "../package",
+            "options": {
+                "symlink": true
+            }
+        }
+    ],
+    "require-dev": {
+        "orchestra/testbench": "^11.0",
+        "laravel/boost": "^2.5",
+        "pestphp/pest": "^4",
+        "larastan/larastan": "^3",
+        "laravel/pint": "^1.32",
+        "michtio/laravel-claude-skills": "@dev"
+    }
+}
