@@ -23,7 +23,7 @@ final class PlannedAction
      *
      * @param string $line The command line shown in the plan.
      * @param Closure(): bool $stillValid Whether the situation the plan saw still holds.
-     * @param Closure(): bool $run Run the action; false when it failed.
+     * @param Closure(Closure(string): void): bool $run Run the action, passing its output to the writer; false when it failed.
      * @author michtio
      */
     public function __construct(
@@ -44,12 +44,13 @@ final class PlannedAction
     }
 
     /**
-     * Run the action.
+     * Run the action; its output (stdout and stderr) goes to the writer as it comes.
      *
+     * @param Closure(string): void $output
      * @author michtio
      */
-    public function run(): bool
+    public function run(Closure $output): bool
     {
-        return ($this->run)();
+        return ($this->run)($output);
     }
 }

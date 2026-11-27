@@ -11,6 +11,9 @@
         <testsuite name="Setup">
             <directory suffix="Test.php">tests/Setup</directory>
         </testsuite>
+        <testsuite name="Profile">
+            <directory suffix="Test.php">tests/Profile</directory>
+        </testsuite>
     </testsuites>
     <source>
         <include>

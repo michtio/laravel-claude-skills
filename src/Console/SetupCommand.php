@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Michtio\LaravelClaudeSkills\Console;
 
 use Illuminate\Console\Command;
+use Michtio\LaravelClaudeSkills\Profile\Profile;
+use Michtio\LaravelClaudeSkills\Profile\ProfileException;
 use Michtio\LaravelClaudeSkills\Setup\FileChange;
 use Michtio\LaravelClaudeSkills\Setup\GitFiles;
 use Michtio\LaravelClaudeSkills\Setup\PathGuard;
@@ -13,18 +15,24 @@ use Michtio\LaravelClaudeSkills\Setup\Planners\ComposerScriptPlanner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\CoreOverridePlanner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\DdevDatabasePlanner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\HooksPathPlanner;
+use Michtio\LaravelClaudeSkills\Setup\Planners\LarastanPlanner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\McpPlanner;
+use Michtio\LaravelClaudeSkills\Setup\Planners\MonitoringPlanner;
+use Michtio\LaravelClaudeSkills\Setup\Planners\PhpstanPlanner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\PhpunitPlanner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\Planner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\RunnerGuidelinePlanner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\StaticFilePlanner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\TestbenchYamlPlanner;
+use Michtio\LaravelClaudeSkills\Setup\Planners\WorkflowPlanner;
 use Michtio\LaravelClaudeSkills\Setup\Project;
+use Michtio\LaravelClaudeSkills\Setup\Runner;
 use Michtio\LaravelClaudeSkills\Setup\SetupException;
 use Michtio\LaravelClaudeSkills\Setup\SetupPlan;
 use Michtio\LaravelClaudeSkills\Setup\SetupState;
 use Michtio\LaravelClaudeSkills\Setup\UnifiedDiff;
 use Symfony\Component\Console\Formatter\OutputFormatter;
+use Symfony\Component\Process\Process;
 
 /**
  * Brings a Laravel application or Testbench package with Boost to the baseline:
@@ -44,8 +52,15 @@ use Symfony\Component\Console\Formatter\OutputFormatter;
  * makes a Testbench package its own skeleton so Boost reads the package's files.
  * Every change, the git setting included, is shown first and confirmed once.
  *
+ * It reads the optional profile `.ai/skills-profile.json` (never writes it): the
+ * Laravel options (runner, monitoring, ci and the rest, over their documented
+ * defaults, which it states when there is no profile), and the extra setup steps,
+ * shown last in the plan and run last, each once (a rerun runs only a new or
+ * changed step). An invalid profile is refused before anything is planned.
+ *
  * Exit codes: 0 when done, declined or nothing to do; 1 with --check when
- * something would change, and when the project is in a state it refuses to touch.
+ * something would change, for an invalid profile, when a step or action fails,
+ * and when the project is in a state it refuses to touch.
  *
  * @author michtio
  */
@@ -69,6 +84,8 @@ final class SetupCommand extends Command
         GitFiles::GITLEAKS_CHECK,
         GitFiles::GITLEAKS_CONFIG,
         TestbenchYamlPlanner::PATH,
+        WorkflowPlanner::PATH,
+        PhpstanPlanner::PATH,
         ...GitFiles::SKELETON_IGNORES,
         SetupState::PATH,
     ];
@@ -112,13 +129,32 @@ final class SetupCommand extends Command
             return self::FAILURE;
         }
 
-        $project = Project::detect($root);
+        try {
+            $profile = Profile::load($root);
+        } catch (ProfileException $exception) {
+            $this->error($exception->getMessage());
+
+            return self::FAILURE;
+        }
+
+        $options = $profile->laravel();
+        $runner = $options['runner'] === 'auto' ? null : Runner::from((string) $options['runner']);
+        $project = Project::detect($root, $runner);
         $this->line('Detected: '.$project->kind->value);
         $this->line('Runner: '.$project->runner->value);
+        $this->showProfile($profile);
+
+        $phpstan = new PhpstanPlanner((int) $options['phpstan_level'], $profile->sets('phpstan_level'));
 
         try {
             PathGuard::assertAllSafe($root, self::OWNED_PATHS);
-            $plan = SetupPlan::build($project, $this->planners(), [new HooksPathPlanner()]);
+            $plan = SetupPlan::build(
+                $project,
+                [...$this->planners($profile), $phpstan],
+                [new HooksPathPlanner(), new MonitoringPlanner((string) $options['monitoring']), new LarastanPlanner($phpstan)],
+                $profile->steps(),
+            );
+            $phpstanNotice = $phpstan->notice($project);
         } catch (SetupException $exception) {
             $this->error($exception->getMessage());
 
@@ -127,6 +163,10 @@ final class SetupCommand extends Command
 
         foreach ($plan->notices as $notice) {
             $this->warn($notice);
+        }
+
+        if ($phpstanNotice !== null) {
+            $this->line($phpstanNotice);
         }
 
         $databaseNotice = (new DdevDatabasePlanner())->notice($project);
@@ -147,10 +187,16 @@ final class SetupCommand extends Command
 
         foreach ($plan->actions as $action) {
             $this->newLine();
-            $this->line('Run: '.$action->line);
+            $this->commandLine('Run: ', $action->line);
         }
 
-        $count = count($plan->changes) + count($plan->actions);
+        foreach ($plan->steps as $step) {
+            $this->newLine();
+            $this->line(OutputFormatter::escape('Extra step: '.$step['name']));
+            $this->commandLine('Run: ', $step['command']);
+        }
+
+        $count = count($plan->changes) + count($plan->actions) + count($plan->steps);
         $summary = $count === 1 ? '1 change' : $count.' changes';
 
         if ($this->option('check')) {
@@ -172,12 +218,41 @@ final class SetupCommand extends Command
     // =========================================================================
 
     /**
+     * State where the options come from: the profile file, or the defaults, listed.
+     * Unknown keys under `laravel` are named, so a typo is not silent.
+     *
+     * @author michtio
+     */
+    private function showProfile(Profile $profile): void
+    {
+        if (! $profile->exists()) {
+            $this->line('No profile found at '.Profile::PATH.'; using the defaults:');
+
+            foreach ($profile->laravel() as $key => $value) {
+                $this->line('  '.$key.': '.match (true) {
+                    is_bool($value) => $value ? 'true' : 'false',
+                    is_scalar($value) => (string) $value,
+                    default => '',
+                });
+            }
+
+            return;
+        }
+
+        $this->line('Profile: '.Profile::PATH);
+
+        foreach ($profile->unknownLaravelKeys() as $key) {
+            $this->warn(OutputFormatter::escape('Ignoring unknown profile key: laravel.'.$key));
+        }
+    }
+
+    /**
      * The planners, one per concern, in the order their changes are shown.
      *
      * @return list<Planner>
      * @author michtio
      */
-    private function planners(): array
+    private function planners(Profile $profile): array
     {
         $planners = [
             new McpPlanner(),
@@ -195,6 +270,8 @@ final class SetupCommand extends Command
         foreach (GitFiles::SKELETON_IGNORES as $path) {
             $planners[] = new StaticFilePlanner($path, GitFiles::IGNORE_ALL, false, static fn (Project $project): bool => $project->isPackage());
         }
+
+        $planners[] = new WorkflowPlanner($profile->laravel()['ci'] === true);
 
         return $planners;
     }
@@ -259,9 +336,11 @@ final class SetupCommand extends Command
     }
 
     /**
-     * Apply the file changes in order, then the state file for the files actually
-     * written. Each file is checked again right before it is written (no symlink,
-     * unchanged since the plan); the first refusal stops the run.
+     * Apply the file changes in order, then the actions, then the state file for the
+     * files actually written, then the profile's extra steps, and finally the state
+     * again with the steps that ran. Each file is checked again right before it is
+     * written (no symlink, unchanged since the plan); the first refusal or failure
+     * stops the run, and what was written stays written and recorded.
      *
      * @author michtio
      */
@@ -295,47 +374,135 @@ final class SetupCommand extends Command
         if ($failure === null) {
             foreach ($plan->actions as $action) {
                 if (! $action->stillValid()) {
-                    $failure = 'The git configuration changed since the plan was shown; `'.$action->line.'` was not run.';
+                    $failure = 'The situation changed since the plan was shown; `'.$action->line.'` was not run.';
 
                     break;
                 }
 
-                if (! $action->run()) {
+                if (! $action->run($this->rawWriter())) {
                     $failure = '`'.$action->line.'` failed.';
 
                     break;
                 }
 
-                $this->line('Ran '.$action->line);
+                $this->commandLine('Ran ', $action->line);
                 $actionsRun++;
             }
         }
 
         // The state records only what was written, so it is written even after a refusal.
-        $state = $plan->stateAfter($written);
         $stateBefore = $stateChange !== null ? $stateChange->before : PlannedFile::read($root, SetupState::PATH);
-        $stateRefusal = $this->refusal($root, new FileChange(SetupState::PATH, $stateBefore, $state));
+        [$stateWritten, $stateFailure] = $this->writeState($root, $stateBefore, $plan->stateAfter($written));
+        $failure ??= $stateFailure;
+        $ran = [];
+        $stepFailed = false;
 
-        if ($stateRefusal !== null) {
-            $failure ??= $stateRefusal;
-        } elseif ($stateBefore === null || SetupPlan::normalise($stateBefore) !== SetupPlan::normalise($state)) {
-            if ($this->apply($root, new FileChange(SetupState::PATH, $stateBefore, $state))) {
-                $written[] = SetupState::PATH;
-            } else {
-                $failure ??= 'Could not write '.SetupState::PATH.'.';
+        if ($failure === null && $plan->steps !== []) {
+            foreach ($plan->steps as $step) {
+                if (! $this->runStep($root, $step['command'])) {
+                    $failure = '`'.$step['command'].'` failed. Later steps were not run; it is planned again on the next run.';
+                    $stepFailed = true;
+
+                    break;
+                }
+
+                $this->commandLine('Ran ', $step['command']);
+                $ran[] = $step;
+            }
+
+            if ($ran !== []) {
+                [$stepsRecorded, $stateFailure] = $this->writeState($root, PlannedFile::read($root, SetupState::PATH), $plan->stateAfter($written, $ran));
+                $stateWritten = $stateWritten || $stepsRecorded;
+                $failure ??= $stateFailure;
             }
         }
 
         if ($failure !== null) {
-            $this->error($failure.' Nothing further was written.');
+            $this->error(OutputFormatter::escape($stepFailed ? $failure : $failure.' Nothing further was written.'));
 
             return false;
         }
 
-        $count = count($written) + $actionsRun;
+        $count = count($written) + ($stateWritten ? 1 : 0) + $actionsRun + count($ran);
         $this->info('Applied: '.($count === 1 ? '1 change' : $count.' changes').'.');
 
         return true;
+    }
+
+    /**
+     * Print a command after its prefix (`Run: `, `Ran `). A multi-line command reads
+     * as one block: each continuation line is indented under the first.
+     *
+     * @author michtio
+     */
+    private function commandLine(string $prefix, string $command): void
+    {
+        $lines = preg_split('/\R/', $command) ?: [$command];
+        $this->line(OutputFormatter::escape($prefix.array_shift($lines)));
+
+        foreach ($lines as $line) {
+            $this->line(OutputFormatter::escape(str_repeat(' ', strlen($prefix)).$line));
+        }
+    }
+
+    /**
+     * A writer that passes a process's output (stdout and stderr) to the console as is.
+     *
+     * @return \Closure(string): void
+     * @author michtio
+     */
+    private function rawWriter(): \Closure
+    {
+        return function (string $buffer): void {
+            $this->output->write($buffer, false, \Symfony\Component\Console\Output\OutputInterface::OUTPUT_RAW);
+        };
+    }
+
+    /**
+     * Write the state file when its content changes: [whether it was written, the
+     * failure or null].
+     *
+     * @return array{0: bool, 1: string|null}
+     * @author michtio
+     */
+    private function writeState(string $root, ?string $before, string $state): array
+    {
+        $change = new FileChange(SetupState::PATH, $before, $state);
+        $refusal = $this->refusal($root, $change);
+
+        if ($refusal !== null) {
+            return [false, $refusal];
+        }
+
+        if ($before !== null && SetupPlan::normalise($before) === SetupPlan::normalise($state)) {
+            return [false, null];
+        }
+
+        return $this->apply($root, $change) ? [true, null] : [false, 'Could not write '.SetupState::PATH.'.'];
+    }
+
+    /**
+     * Run one extra step as `sh -c <command>` in the project root, its output passed
+     * through; false when it exits non-zero or cannot start.
+     *
+     * @author michtio
+     */
+    private function runStep(string $root, string $command): bool
+    {
+        try {
+            $process = new Process(['sh', '-c', $command], $root);
+            $process->setTimeout(null);
+            $write = $this->rawWriter();
+            $process->run(static function (string $type, string $buffer) use ($write): void {
+                $write($buffer);
+            });
+        } catch (\Throwable $exception) {
+            $this->rawWriter()($exception->getMessage()."\n");
+
+            return false;
+        }
+
+        return $process->isSuccessful();
     }
 
     /**

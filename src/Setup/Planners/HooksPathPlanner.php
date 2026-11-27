@@ -25,7 +25,7 @@ use Symfony\Component\Process\Process;
  *
  * @author michtio
  */
-final class HooksPathPlanner
+final class HooksPathPlanner implements ActionPlanner
 {
     // Constants
     // =========================================================================
@@ -82,7 +82,7 @@ final class HooksPathPlanner
             new PlannedAction(
                 'git config core.hooksPath '.self::HOOKS,
                 fn (): bool => $this->hooksPath($root) === null,
-                fn (): bool => $this->git($root, ['config', 'core.hooksPath', self::HOOKS]) !== null,
+                fn (\Closure $output): bool => $this->git($root, ['config', 'core.hooksPath', self::HOOKS]) !== null,
             ),
             [],
         ];

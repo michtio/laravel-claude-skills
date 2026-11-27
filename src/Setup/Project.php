@@ -52,14 +52,15 @@ final class Project
     }
 
     /**
-     * Detect kind and runner for the project at the given root.
+     * Detect kind and runner for the project at the given root. A runner passed in
+     * (the profile's `laravel.runner`, when not `auto`) wins over detection.
      *
      * @author michtio
      */
-    public static function detect(string $root): self
+    public static function detect(string $root, ?Runner $runner = null): self
     {
         $root = rtrim($root, '/\\');
-        $ddev = is_dir($root.'/.ddev');
+        $ddev = $runner === null ? is_dir($root.'/.ddev') : $runner === Runner::Ddev;
 
         return new self(
             $root,
