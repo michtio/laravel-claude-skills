@@ -165,7 +165,7 @@ final class Project
     /**
      * The database connection the suite should use. A package on the DDEV test
      * database: the DDEV database type (mysql, mariadb, or pgsql for postgres;
-     * mysql when the DDEV config names none). Otherwise DB_CONNECTION from .env,
+     * mariadb, DDEV's default, when the DDEV config names none). Otherwise DB_CONNECTION from .env,
      * else .env.example, else mysql for a DDEV app and sqlite otherwise.
      *
      * @author michtio
@@ -174,12 +174,12 @@ final class Project
     {
         if ($this->ddevTestDatabase) {
             $database = $this->ddevConfig()['database'] ?? null;
-            $type = is_array($database) && is_string($database['type'] ?? null) ? $database['type'] : 'mysql';
+            $type = is_array($database) && is_string($database['type'] ?? null) ? $database['type'] : 'mariadb';
 
             return match ($type) {
-                'mariadb' => 'mariadb',
+                'mysql' => 'mysql',
                 'postgres' => 'pgsql',
-                default => 'mysql',
+                default => 'mariadb',
             };
         }
 

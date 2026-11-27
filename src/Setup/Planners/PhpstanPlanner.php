@@ -20,8 +20,8 @@ use Michtio\LaravelClaudeSkills\Setup\SetupState;
  * Paths: for an app, those of app, config, database and routes that exist, in that
  * order; when none does, src if it exists, else app. For a Testbench package, those
  * of src, tests and workbench/app that exist, in that order, tests included when
- * this run creates tests/Pest.php: a fresh package with an empty src still has
- * files to analyse, and no path that is missing fails the gate.
+ * this run creates tests/Pest.php: a fresh Pest package with an empty src still has
+ * files to check, and no path that is missing fails the gate.
  *
  * With phpstan/extension-installer required, the file has no includes: the
  * installer already includes Larastan's and this pack's extensions, and a second

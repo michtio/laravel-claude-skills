@@ -50,6 +50,31 @@ final class PathGuard
     }
 
     /**
+     * Check a path the setup only creates when it is missing and never reads or
+     * writes once it exists (CLAUDE.md): a symlink to a file inside the project is
+     * left alone, a dangling one or one that resolves outside is refused.
+     *
+     * @throws SetupException When the path is a dangling symlink or resolves outside the root.
+     * @author michtio
+     */
+    public static function assertLinkInside(string $root, string $relative): void
+    {
+        $path = $root.'/'.$relative;
+
+        if (! is_link($path)) {
+            self::assertSafe($root, $relative);
+
+            return;
+        }
+
+        $real = realpath($path);
+
+        if ($real === false || ! str_starts_with($real, $root.DIRECTORY_SEPARATOR)) {
+            throw new SetupException('Refusing to follow a symlink: '.$relative.' points '.($real === false ? 'nowhere (a dangling link)' : 'outside the project').'. Replace it with a regular file, or a link to a file inside the project, then run the setup again. Nothing was written.');
+        }
+    }
+
+    /**
      * Check every given owned path.
      *
      * @param list<string> $paths

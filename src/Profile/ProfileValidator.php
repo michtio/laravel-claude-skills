@@ -356,6 +356,12 @@ final class ProfileValidator
      */
     private static function laravel(mixed $laravel): void
     {
+        // PHP's json_encode writes an empty map as [], so a tool that writes the profile
+        // with no Laravel options produces "laravel": []: read as no options set.
+        if ($laravel === []) {
+            return;
+        }
+
         self::object($laravel, 'laravel');
 
         if (property_exists($laravel, 'runner') && ! in_array($laravel->runner, self::RUNNERS, true)) {
@@ -414,7 +420,7 @@ final class ProfileValidator
         $seen = [];
 
         foreach ($matrix as $index => $version) {
-            if (! is_string($version) || preg_match('/^\d+\.\d+$/', $version) !== 1) {
+            if (! is_string($version) || preg_match('/^\d+\.\d+$/D', $version) !== 1) {
                 throw ProfileException::field('laravel.php_matrix.'.$index, 'must be a PHP version written as an "X.Y" string, such as "8.4"');
             }
 
@@ -444,7 +450,7 @@ final class ProfileValidator
                 throw ProfileException::field($path, 'cannot be named; only '.implode(', ', self::PIN_NAMES).' can (the database, APP_ENV and live-flag pins stay forced)');
             }
 
-            if (! is_string($value) || preg_match('/^[A-Za-z0-9_.-]+$/', $value) !== 1) {
+            if (! is_string($value) || preg_match('/^[A-Za-z0-9_.-]+$/D', $value) !== 1) {
                 throw ProfileException::field($path, 'must be `env` or a value of letters, digits, _, . and -');
             }
         }
@@ -457,7 +463,7 @@ final class ProfileValidator
      */
     private static function isDate(mixed $value): bool
     {
-        if (! is_string($value) || preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $value, $m) !== 1) {
+        if (! is_string($value) || preg_match('/^(\d{4})-(\d{2})-(\d{2})$/D', $value, $m) !== 1) {
             return false;
         }
 

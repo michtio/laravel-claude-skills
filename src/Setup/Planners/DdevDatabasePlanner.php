@@ -7,6 +7,7 @@ namespace Michtio\LaravelClaudeSkills\Setup\Planners;
 use Michtio\LaravelClaudeSkills\Setup\PlannedFile;
 use Michtio\LaravelClaudeSkills\Setup\Project;
 use Michtio\LaravelClaudeSkills\Setup\SetupException;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * Writes `.ddev/config.claude-skills.yaml`, a DDEV config override with a
@@ -27,6 +28,8 @@ use Michtio\LaravelClaudeSkills\Setup\SetupException;
  * `web_environment` list with DDEV's db host, port and credentials (DB_HOST=db,
  * DB_PORT, DB_USERNAME=db, DB_PASSWORD=db): a package has no .env that names them,
  * and they are never forced in the PHPUnit file, so CI sets its own in the job.
+ * A key the person sets in their own DDEV config's `web_environment` is left out,
+ * so their value is never silently replaced.
  *
  * Written only for a DDEV project whose suite uses a server database (an app not
  * on sqlite, or a package on the DDEV test database) on mysql, mariadb or pgsql. Any other application on a
@@ -48,6 +51,11 @@ final class DdevDatabasePlanner implements Planner
      * The connections the hook can create a database for.
      */
     public const CONNECTIONS = ['mysql', 'mariadb', 'pgsql'];
+
+    /**
+     * The connection keys the override sets for a package, unless the person sets them.
+     */
+    public const DB_KEYS = ['DB_HOST', 'DB_PORT', 'DB_USERNAME', 'DB_PASSWORD'];
 
     /**
      * A database name that is safe unquoted in MySQL, PostgreSQL and the shell.
@@ -96,18 +104,71 @@ final class DdevDatabasePlanner implements Planner
         ];
 
         if ($project->isPackage()) {
-            array_push(
-                $lines,
-                '# The package has no .env: its suite reaches the db service with DDEV\'s defaults.',
-                'web_environment:',
-                '  - DB_HOST=db',
-                '  - DB_PORT='.($project->dbConnection() === 'pgsql' ? '5432' : '3306'),
-                '  - DB_USERNAME=db',
-                '  - DB_PASSWORD=db',
-            );
+            $own = $this->ownEnvironmentKeys($project);
+            $environment = array_filter([
+                'DB_HOST' => 'db',
+                'DB_PORT' => $project->dbConnection() === 'pgsql' ? '5432' : '3306',
+                'DB_USERNAME' => 'db',
+                'DB_PASSWORD' => 'db',
+            ], static fn (string $key): bool => ! in_array($key, $own, true), ARRAY_FILTER_USE_KEY);
+
+            if ($environment !== []) {
+                $lines[] = '# The package has no .env: its suite reaches the db service with DDEV\'s defaults.';
+
+                if ($own !== []) {
+                    $lines[] = '# Left to your own .ddev config: '.implode(', ', $own).'.';
+                }
+
+                $lines[] = 'web_environment:';
+
+                foreach ($environment as $key => $value) {
+                    $lines[] = '  - '.$key.'='.$value;
+                }
+            }
         }
 
         return implode("\n", $lines)."\n";
+    }
+
+    /**
+     * The DB_HOST, DB_PORT, DB_USERNAME and DB_PASSWORD keys the person sets in the
+     * `web_environment` of their own DDEV config files (every `.ddev/config*.yaml`
+     * but the setup's override): the override leaves those to them.
+     *
+     * @return list<string>
+     * @author michtio
+     */
+    private function ownEnvironmentKeys(Project $project): array
+    {
+        $files = glob($project->root.'/.ddev/config.*.yaml') ?: [];
+        array_unshift($files, $project->root.'/.ddev/config.yaml');
+        $own = [];
+
+        foreach ($files as $file) {
+            if (! is_file($file) || str_ends_with($file, '/'.self::PATH)) {
+                continue;
+            }
+
+            try {
+                $config = Yaml::parse((string) file_get_contents($file));
+            } catch (\Throwable) {
+                continue;
+            }
+
+            $entries = is_array($config) && is_array($config['web_environment'] ?? null) ? $config['web_environment'] : [];
+
+            foreach ($entries as $entry) {
+                $key = is_string($entry) ? explode('=', $entry, 2)[0] : '';
+
+                if (in_array($key, self::DB_KEYS, true) && ! in_array($key, $own, true)) {
+                    $own[] = $key;
+                }
+            }
+        }
+
+        sort($own);
+
+        return $own;
     }
 
     /**

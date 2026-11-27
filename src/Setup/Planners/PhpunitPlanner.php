@@ -130,13 +130,10 @@ final class PhpunitPlanner implements Planner
             $wanted[$key] = [$value, $tag === 'env' && $forced ? 'true' : null];
         }
 
+        // A twin the setup no longer writes (its pin is `env`) counts too: one holding
+        // the standard value is removed quietly, any other value was set by hand.
         foreach ($owned as $key => [$value, $force]) {
             $forced = $candidates[$key][0] === 'server' || ($force !== null && strtolower($force) === 'true');
-
-            if ($forced && ! isset($elements[$key])) {
-                // A twin the setup no longer writes (its pin is `env` now): removing it is not an edit of the person's.
-                continue;
-            }
 
             if ($forced && $value !== $candidates[$key][2]) {
                 $forcedElsewhere = true;

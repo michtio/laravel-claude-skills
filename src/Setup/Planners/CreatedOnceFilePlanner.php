@@ -54,6 +54,8 @@ final class CreatedOnceFilePlanner implements Planner
 
     /**
      * The planner for a package's tests/Pest.php: Testbench's test case for every test.
+     * Only for a package on Pest (`pestphp/pest` required) whose tests pick no base
+     * case yet: no `tests/TestCase.php` and no test file that calls `uses(`.
      *
      * @author michtio
      */
@@ -70,8 +72,35 @@ final class CreatedOnceFilePlanner implements Planner
                 '',
                 'pest()->extend(TestCase::class)->in(__DIR__);',
             ])."\n",
-            static fn (Project $project): bool => $project->isPackage(),
+            static fn (Project $project): bool => $project->isPackage()
+                && $project->requires('pestphp/pest')
+                && ! file_exists($project->root.'/tests/TestCase.php')
+                && ! self::callsUses($project->root.'/tests'),
         );
+    }
+
+    /**
+     * Whether a PHP file under the folder (subfolders included, symlinks not
+     * followed) calls Pest's `uses(`, which picks the base case itself.
+     *
+     * @author michtio
+     */
+    public static function callsUses(string $directory): bool
+    {
+        if (! is_dir($directory) || is_link($directory)) {
+            return false;
+        }
+
+        $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($directory, \FilesystemIterator::SKIP_DOTS));
+
+        foreach ($files as $file) {
+            if ($file instanceof \SplFileInfo && $file->isFile() && ! $file->isLink() && str_ends_with($file->getFilename(), '.php')
+                && preg_match('/(?<![\w>:$])uses\s*\(/', (string) file_get_contents($file->getPathname())) === 1) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

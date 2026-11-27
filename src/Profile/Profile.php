@@ -122,17 +122,18 @@ final class Profile
 
     /**
      * Every Laravel option with its effective value: laravel() plus the defaults of
-     * the optional options the profile leaves out, in their stated order.
+     * the optional options the profile leaves out, always in the canonical order
+     * (the five of LARAVEL_DEFAULTS, then test_database, php_matrix, test_pins).
      *
      * @return array<string, mixed>
      * @author michtio
      */
     public function effective(): array
     {
-        $options = $this->laravel;
+        $options = [];
 
-        foreach (ProfileValidator::OPTIONAL_DEFAULTS as $key => $default) {
-            $options[$key] ??= $default;
+        foreach ([...ProfileValidator::LARAVEL_DEFAULTS, ...ProfileValidator::OPTIONAL_DEFAULTS] as $key => $default) {
+            $options[$key] = array_key_exists($key, $this->laravel) ? $this->laravel[$key] : $default;
         }
 
         return $options;

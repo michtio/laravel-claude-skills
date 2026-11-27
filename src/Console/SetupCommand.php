@@ -166,6 +166,13 @@ final class SetupCommand extends Command
 
         try {
             PathGuard::assertAllSafe($root, self::OWNED_PATHS);
+
+            // tests/Pest.php may be created in a Pest package; CLAUDE.md may be created, never written once it exists.
+            if ($project->isPackage() && $project->requires('pestphp/pest')) {
+                PathGuard::assertSafe($root, CreatedOnceFilePlanner::PEST);
+            }
+
+            PathGuard::assertLinkInside($root, CreatedOnceFilePlanner::CLAUDE_MD);
             $plan = SetupPlan::build(
                 $project,
                 [...$this->planners($profile), $phpstan],
