@@ -1,0 +1,11 @@
+# PHPStan / Larastan rules for the pitfalls in resources/boost/skills/laravel-pitfalls.
+# Include it from the application's phpstan.neon:
+#
+#   includes:
+#       - vendor/michtio/laravel-claude-skills/extension.neon
+#
+# Rules (each names its pitfall in its message):
+#   NoSideEffectInTransactionRule  laravel-pitfalls: transactions
+
+rules:
+    - Michtio\LaravelClaudeSkills\PHPStan\Rules\NoSideEffectInTransactionRule
