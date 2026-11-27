@@ -21,7 +21,8 @@ use Michtio\LaravelClaudeSkills\Setup\SetupException;
  * as `<env name="X" value="v" force="true"/>`, replacing an element of that name
  * in place (a stock unforced element is not a hand edit) or appended to `<php>`
  * (created when absent). The file is edited as text, so everything else in it,
- * formatting included, stays as it is.
+ * formatting and XML comments included, stays as it is; an element that only
+ * appears inside a comment does not count as present.
  *
  * Pins: APP_ENV=testing, CACHE_STORE=array, QUEUE_CONNECTION=sync,
  * MAIL_MAILER=array, SESSION_DRIVER=array, DB_URL="" (an empty URL cannot point
@@ -313,12 +314,43 @@ final class PhpunitPlanner implements Planner
 
     /**
      * Merge the pins into existing content as text: replace each owned element in
-     * place, drop later duplicates of it, append the missing ones to `<php>`.
+     * place, drop later duplicates of it, append the missing ones to `<php>`. XML
+     * comments are left byte-identical and never count as elements.
      *
      * @param array<string, array{0: string, 1: string, 2: string}> $elements
      * @author michtio
      */
     private function merge(string $content, array $elements): string
+    {
+        // XML comments are never edited: each is swapped for a placeholder no element
+        // pattern can match, and put back byte for byte at the end.
+        $comments = [];
+        $content = (string) preg_replace_callback(
+            '/<!--.*?-->/s',
+            static function (array $match) use (&$comments): string {
+                $comments[] = $match[0];
+
+                return "\0LCS_COMMENT_".(count($comments) - 1)."\0";
+            },
+            $content,
+        );
+
+        $merged = $this->mergeElements($content, $elements);
+
+        return (string) preg_replace_callback(
+            '/\0LCS_COMMENT_(\d+)\0/',
+            static fn (array $match): string => $comments[(int) $match[1]],
+            $merged,
+        );
+    }
+
+    /**
+     * Merge the pins into content whose comments are already masked.
+     *
+     * @param array<string, array{0: string, 1: string, 2: string}> $elements
+     * @author michtio
+     */
+    private function mergeElements(string $content, array $elements): string
     {
         $eol = str_contains($content, "\r\n") ? "\r\n" : "\n";
 

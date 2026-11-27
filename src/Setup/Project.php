@@ -22,6 +22,19 @@ namespace Michtio\LaravelClaudeSkills\Setup;
  */
 final class Project
 {
+    // Constants
+    // =========================================================================
+
+    /**
+     * The longest identifier PostgreSQL keeps (MySQL allows 64): the limit for the test database name.
+     */
+    public const MAX_IDENTIFIER = 63;
+
+    /**
+     * The suffix of the test database name.
+     */
+    public const TEST_SUFFIX = '_test';
+
     // Public Methods
     // =========================================================================
 
@@ -165,19 +178,32 @@ final class Project
     }
 
     /**
-     * The test database name: <slug>_test.
+     * The test database name: <slug>_test, always a valid unquoted identifier for
+     * MySQL and PostgreSQL (/^[a-z][a-z0-9_]*_test$/, at most 63 characters).
+     *
+     * A slug that starts with a digit, or is empty, gets the prefix "t_". A slug
+     * too long for the limit is cut so the whole name, "_test" included, is 63
+     * characters, with no trailing underscore left before "_test".
      *
      * @author michtio
      */
     public function testDatabase(): string
     {
-        return $this->slug().'_test';
+        $base = $this->slug();
+
+        if ($base === '' || ctype_digit($base[0])) {
+            $base = 't_'.$base;
+        }
+
+        $base = rtrim(substr($base, 0, self::MAX_IDENTIFIER - strlen(self::TEST_SUFFIX)), '_');
+
+        return $base.self::TEST_SUFFIX;
     }
 
     /**
      * The project slug: composer.json name after the slash (or the whole name), else
      * the directory name; lowercased, runs outside [a-z0-9] become one underscore,
-     * underscores trimmed at both ends.
+     * underscores trimmed at both ends. Empty when nothing is left.
      *
      * @author michtio
      */
@@ -190,9 +216,7 @@ final class Project
             $name = substr($name, strrpos($name, '/') + 1);
         }
 
-        $slug = trim((string) preg_replace('/[^a-z0-9]+/', '_', strtolower($name)), '_');
-
-        return $slug === '' ? 'app' : $slug;
+        return trim((string) preg_replace('/[^a-z0-9]+/', '_', strtolower($name)), '_');
     }
 
     /**

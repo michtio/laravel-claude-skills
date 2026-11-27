@@ -129,6 +129,12 @@ final class SetupCommand extends Command
             $this->warn($notice);
         }
 
+        $databaseNotice = (new DdevDatabasePlanner())->notice($project);
+
+        if ($databaseNotice !== null) {
+            $this->warn($databaseNotice);
+        }
+
         if ($plan->isEmpty()) {
             $this->info('No changes.');
 

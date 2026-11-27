@@ -17,7 +17,10 @@ use Symfony\Component\Process\Process;
  *   configuration of a repository it is not the root of).
  * - core.hooksPath already `.githooks`: nothing to do.
  * - core.hooksPath set to anything else: never changed, and a line saying so.
- * - Unset: one planned action, confirmed with the file changes.
+ * - Unset, with an active hook in the repository's hooks directory (an executable
+ *   file not ending in .sample): no action, since setting core.hooksPath would
+ *   switch that hook off, and a line naming the hooks and the manual command.
+ * - Unset otherwise: one planned action, confirmed with the file changes.
  *
  * @author michtio
  */
@@ -65,6 +68,15 @@ final class HooksPathPlanner
             return [null, ['core.hooksPath is already set to '.$value.'; leaving it (the commit-msg hook in '.self::HOOKS.' is not active)']];
         }
 
+        $existing = $this->existingHooks($root);
+
+        if ($existing !== []) {
+            return [null, [
+                'Existing git hooks in .git/hooks ('.implode(', ', $existing).'): leaving core.hooksPath unset, since setting it would switch them off'
+                .' (the commit-msg hook in '.self::HOOKS.' is not active). Move them to '.self::HOOKS.' and run `git config core.hooksPath '.self::HOOKS.'` to use both.',
+            ]];
+        }
+
         return [
             new PlannedAction(
                 'git config core.hooksPath '.self::HOOKS,
@@ -77,6 +89,42 @@ final class HooksPathPlanner
 
     // Private Methods
     // =========================================================================
+
+    /**
+     * Names of the active hooks in the repository's own hooks directory: executable
+     * files not ending in .sample, sorted.
+     *
+     * @return list<string>
+     * @author michtio
+     */
+    private function existingHooks(string $root): array
+    {
+        $directory = $this->git($root, ['rev-parse', '--git-path', 'hooks']);
+
+        if ($directory === null || $directory === '') {
+            return [];
+        }
+
+        if (! str_starts_with($directory, '/')) {
+            $directory = $root.'/'.$directory;
+        }
+
+        if (! is_dir($directory)) {
+            return [];
+        }
+
+        $hooks = [];
+
+        foreach (new \FilesystemIterator($directory) as $file) {
+            if ($file instanceof \SplFileInfo && $file->isFile() && $file->isExecutable() && ! str_ends_with($file->getFilename(), '.sample')) {
+                $hooks[] = $file->getFilename();
+            }
+        }
+
+        sort($hooks);
+
+        return $hooks;
+    }
 
     /**
      * The configured core.hooksPath, or null when unset.
