@@ -60,6 +60,29 @@ def tail(r: subprocess.CompletedProcess, n: int = 3000) -> str:
     return plain(r.stdout + r.stderr)[-n:]
 
 
+def build_project(directory: Path, project: str, database: str | None) -> None:
+    """Copy the fixture package into `directory`, give it its own DDEV project and composer-install it.
+
+    `database` is the `--database` argument (`mysql:8.0`), or None to let DDEV run its own default.
+    """
+    shutil.copytree(FIXTURE, directory)
+    (directory / ".ddev").mkdir()
+    (directory / ".ddev/config.yaml").write_text(f"name: {project}\ntype: php\n")
+    (directory / ".ddev/docker-compose.package.yaml").write_text("services:\n  web:\n    volumes:\n      - ../../..:/var/www/package:ro\n")
+    config = ["config", f"--project-name={project}", "--project-type=php", "--php-version=8.4", "--docroot=."]
+    if database is not None:
+        config.append(f"--database={database}")
+    for command in (config, ["start"]):
+        r = ddev(command, directory)
+        if r.returncode != 0:
+            raise RuntimeError(f"ddev {' '.join(command)} failed: " + tail(r))
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=directory, check=True)
+    r = ddev(["composer", "update", "--no-interaction", "--no-progress", "-W"], directory)
+    if r.returncode != 0:
+        raise RuntimeError("composer update failed: " + tail(r))
+    (directory / "tests").mkdir(exist_ok=True)
+
+
 @unittest.skipUnless(shutil.which("ddev"), "needs ddev: the package runs in its own DDEV project, never on the host")
 class FreshPackageOnMysql(unittest.TestCase):
     @classmethod
@@ -68,22 +91,7 @@ class FreshPackageOnMysql(unittest.TestCase):
         cls.addClassCleanup(ddev_lock.release, cls._lock)
         cls.addClassCleanup(cls.destroy)
         cls.destroy()
-        shutil.copytree(FIXTURE, DIR)
-        (DIR / ".ddev").mkdir()
-        (DIR / ".ddev/config.yaml").write_text(f"name: {PROJECT}\ntype: php\n")
-        (DIR / ".ddev/docker-compose.package.yaml").write_text("services:\n  web:\n    volumes:\n      - ../../..:/var/www/package:ro\n")
-        for command in (
-            ["config", f"--project-name={PROJECT}", "--project-type=php", "--php-version=8.4", "--docroot=.", "--database=mysql:8.0"],
-            ["start"],
-        ):
-            r = ddev(command)
-            if r.returncode != 0:
-                raise RuntimeError(f"ddev {' '.join(command)} failed: " + tail(r))
-        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=DIR, check=True)
-        r = ddev(["composer", "update", "--no-interaction", "--no-progress", "-W"])
-        if r.returncode != 0:
-            raise RuntimeError("composer update failed: " + tail(r))
-        (DIR / "tests").mkdir(exist_ok=True)
+        build_project(DIR, PROJECT, "mysql:8.0")
 
     @classmethod
     def destroy(cls):
@@ -182,6 +190,52 @@ class FreshPackageOnMysql(unittest.TestCase):
         with self.subTest("without the shell value the suite sees the phpunit default, array"):
             self.assertEqual(default.returncode, 0, "without the shell value the suite must see array:\n" + tail(default))
             self.assertRegex(plain(default.stdout), r"2 passed")
+
+
+@unittest.skipUnless(shutil.which("ddev"), "needs ddev: the package runs in its own DDEV project, never on the host")
+class NoDatabaseBlockFollowsRunningDdev(unittest.TestCase):
+    """Round 4: a package on `test_database: ddev` whose .ddev/config.yaml has no database block.
+
+    The setup takes the engine and version from the DDEV that runs the project, and the CI service image
+    and the pins match what the running project reports (`ddev describe -j`, read here on the host).
+    DDEV's own default changes between versions, so nothing here names a number.
+    """
+
+    DIR2 = REPO / "fixtures/.s9b-default-db"
+    PROJECT2 = "lcs-s9b-default-db"
+
+    @classmethod
+    def setUpClass(cls):
+        cls._lock = ddev_lock.acquire()
+        cls.addClassCleanup(ddev_lock.release, cls._lock)
+        cls.addClassCleanup(cls.destroy)
+        cls.destroy()
+        build_project(cls.DIR2, cls.PROJECT2, None)
+
+    @classmethod
+    def destroy(cls):
+        if cls.DIR2.exists():
+            ddev(["delete", "-Oy", cls.PROJECT2], cwd=cls.DIR2)
+            shutil.rmtree(cls.DIR2, ignore_errors=True)
+
+    def test_the_ci_service_and_the_pins_match_the_running_database(self):
+        # DDEV writes the default database block out on start; remove it, so the file names no database while
+        # the running project keeps reporting its own.
+        config = self.DIR2 / ".ddev/config.yaml"
+        config.write_text(re.sub(r"(?m)^database:\n(?:[ \t]+.*\n)+", "", config.read_text()))
+        self.assertNotRegex(config.read_text(), r"(?m)^database:", "the fixture must have no database block")
+        info = json.loads(ddev(["describe", "-j"], self.DIR2).stdout)["raw"]
+        engine, version = info["database_type"], info["database_version"]
+        connection = {"mysql": "mysql", "mariadb": "mariadb", "postgres": "pgsql"}[engine]
+
+        r = ddev(["exec", *SETUP, "--yes"], self.DIR2)
+        self.assertEqual(r.returncode, 0, "setup failed with no database block:\n" + tail(r))
+
+        workflow = (self.DIR2 / WORKFLOW).read_text()
+        self.assertIn(f"image: {engine}:{version}", workflow, "the CI service must run the engine and version the project runs")
+        phpunit = (self.DIR2 / "phpunit.xml.dist").read_text()
+        self.assertIn(f'<env name="DB_CONNECTION" value="{connection}" force="true"/>', phpunit)
+        self.assertIn(f'<env name="DB_DATABASE" value="{DATABASE}" force="true"/>', phpunit)
 
 
 @unittest.skipUnless(shutil.which("ddev") and shutil.which("docker"), "needs ddev and docker")

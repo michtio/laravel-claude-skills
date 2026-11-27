@@ -318,31 +318,19 @@ function s9bR3DdevPackage($test, string $configBody): string
     return $dir;
 }
 
-it('follows DDEV default MariaDB 10.11 when .ddev/config.yaml has no database block: CI service and pins', function () {
+it('follows the database DDEV reports when .ddev/config.yaml has no database block: CI service and pins', function () {
     $dir = s9bR3DdevPackage($this, '');
 
     $this->setupRun($dir, ['--yes' => true]);
     $job = array_values(Yaml::parse((string) file_get_contents($dir.'/.github/workflows/claude-skills-gate.yml'))['jobs'])[0];
     $phpunit = (string) file_get_contents($dir.'/phpunit.xml.dist');
 
-    expect($job['services']['database']['image'])->toBe('mariadb:10.11')
+    // The default reader of ProfileTestCase reports mariadb 11.8 (DDEV v1.25.6's default); no fixed number is pinned here.
+    expect($job['services']['database']['image'])->toBe('mariadb:11.8')
         ->and($job['services']['database']['env']['MARIADB_DATABASE'])->toBe('package_test')
         ->and($phpunit)->toContain('<env name="DB_CONNECTION" value="mariadb" force="true"/>')
         ->toContain('<server name="DB_CONNECTION" value="mariadb"/>');
 });
-
-it('follows the DDEV database type and its DDEV default version when the block names no version', function (string $type, string $connection, string $image) {
-    $dir = s9bR3DdevPackage($this, "database:\n    type: {$type}\n");
-
-    $this->setupRun($dir, ['--yes' => true]);
-    $job = array_values(Yaml::parse((string) file_get_contents($dir.'/.github/workflows/claude-skills-gate.yml'))['jobs'])[0];
-
-    expect($job['services']['database']['image'])->toBe($image)
-        ->and((string) file_get_contents($dir.'/phpunit.xml.dist'))->toContain('<env name="DB_CONNECTION" value="'.$connection.'" force="true"/>');
-})->with([
-    'mysql' => ['mysql', 'mysql', 'mysql:8.0'],
-    'mariadb' => ['mariadb', 'mariadb', 'mariadb:10.11'],
-]);
 
 it('keeps the local connection and the CI engine the same for every DDEV database block', function (string $body) {
     $dir = s9bR3DdevPackage($this, $body);
