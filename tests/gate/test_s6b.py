@@ -43,6 +43,11 @@ def slug(composer_name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", tail).strip("_") + "_test"
 
 
+def plain(text: str) -> str:
+    """Strip ANSI escape codes: Collision colours output even without a TTY inside `ddev exec`."""
+    return re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", text)
+
+
 def ddev(args: list[str], cwd: Path = REPO) -> subprocess.CompletedProcess:
     return subprocess.run(["ddev", *args], cwd=cwd, capture_output=True, text=True)
 
@@ -117,7 +122,7 @@ class AppIsolationInDdev(unittest.TestCase):
         r = ddev(["restart"], APP)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         r = ddev(["mysql", "-e", "SHOW DATABASES"], APP)
-        self.assertIn(self.dbname, r.stdout, "post-start hook did not create the test database")
+        self.assertIn(self.dbname, plain(r.stdout), "post-start hook did not create the test database")
 
         # AC10: the flag is true in .env and off inside the tests.
         self.assertIn("PAYMENTS_LIVE=true", env.read_text())
@@ -187,7 +192,7 @@ class PackageGateInDdev(unittest.TestCase):
 
         # AC12 / AC10 on a package: the gate command runs the package suite, the live flag is off.
         out = self.sh("composer test")  # exit code 0 asserted by sh()
-        self.assertRegex(out.stdout + out.stderr, r"Tests:\s+1 passed", "the package suite did not run")
+        self.assertRegex(plain(out.stdout + out.stderr), r"Tests:\s+1 passed", "the package suite did not run")
 
         # Package-local skeleton: Boost renders this package's own guidelines, runner text included.
         self.sh("php vendor/bin/testbench boost:update --no-interaction")
