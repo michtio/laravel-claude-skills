@@ -81,7 +81,7 @@ it('plans no gitleaks Dockerfile for a project on the host runner', function () 
     [, $output] = $this->setupRun($dir, ['--yes' => true]);
 
     expect(file_exists($dir.'/'.S9D1_DOCKERFILE))->toBeFalse()
-        ->and($output)->not->toContain('Dockerfile.gitleaks');
+        ->and($this->diffPaths($output))->not->toContain(S9D1_DOCKERFILE);
 });
 
 it('fails the secret scan inside DDEV when gitleaks is missing, naming ddev restart', function () {
