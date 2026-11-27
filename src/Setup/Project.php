@@ -137,6 +137,131 @@ final class Project
             : ['command' => 'php', 'args' => $args];
     }
 
+    /**
+     * The database connection the suite should use: DB_CONNECTION from .env, else
+     * .env.example, else mysql for a DDEV app and sqlite otherwise.
+     *
+     * @author michtio
+     */
+    public function dbConnection(): string
+    {
+        $env = $this->envValues();
+
+        if (isset($env['DB_CONNECTION']) && $env['DB_CONNECTION'] !== '') {
+            return $env['DB_CONNECTION'];
+        }
+
+        return $this->usesDdev() && ! $this->isPackage() ? 'mysql' : 'sqlite';
+    }
+
+    /**
+     * Whether the suite runs on in-memory sqlite (a package, or an sqlite connection).
+     *
+     * @author michtio
+     */
+    public function usesMemoryDatabase(): bool
+    {
+        return $this->isPackage() || $this->dbConnection() === 'sqlite';
+    }
+
+    /**
+     * The test database name: <slug>_test.
+     *
+     * @author michtio
+     */
+    public function testDatabase(): string
+    {
+        return $this->slug().'_test';
+    }
+
+    /**
+     * The project slug: composer.json name after the slash (or the whole name), else
+     * the directory name; lowercased, runs outside [a-z0-9] become one underscore,
+     * underscores trimmed at both ends.
+     *
+     * @author michtio
+     */
+    public function slug(): string
+    {
+        $composer = $this->composerJson();
+        $name = is_string($composer['name'] ?? null) && $composer['name'] !== '' ? $composer['name'] : basename($this->root);
+
+        if (str_contains($name, '/')) {
+            $name = substr($name, strrpos($name, '/') + 1);
+        }
+
+        $slug = trim((string) preg_replace('/[^a-z0-9]+/', '_', strtolower($name)), '_');
+
+        return $slug === '' ? 'app' : $slug;
+    }
+
+    /**
+     * Live-provider flags: keys in .env.example or .env matching /^[A-Z][A-Z0-9_]*_LIVE(_MODE)?$/, sorted.
+     *
+     * @return list<string>
+     * @author michtio
+     */
+    public function liveFlags(): array
+    {
+        $flags = [];
+
+        foreach (['.env.example', '.env'] as $file) {
+            foreach (array_keys($this->parseEnv($file)) as $key) {
+                if (preg_match('/^[A-Z][A-Z0-9_]*_LIVE(_MODE)?$/', $key) === 1) {
+                    $flags[$key] = true;
+                }
+            }
+        }
+
+        $flags = array_keys($flags);
+        sort($flags);
+
+        return $flags;
+    }
+
+    /**
+     * composer.json decoded to arrays, or an empty array when absent or invalid.
+     *
+     * @return array<mixed>
+     * @author michtio
+     */
+    public function composerJson(): array
+    {
+        $file = $this->root.'/composer.json';
+        $data = is_file($file) ? json_decode((string) file_get_contents($file), true) : null;
+
+        return is_array($data) ? $data : [];
+    }
+
+    /**
+     * Whether composer.json lists a package in require or require-dev.
+     *
+     * @author michtio
+     */
+    public function requires(string $package): bool
+    {
+        $composer = $this->composerJson();
+
+        foreach (['require', 'require-dev'] as $section) {
+            if (is_array($composer[$section] ?? null) && array_key_exists($package, $composer[$section])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Values from .env.example overlaid with .env (.env wins).
+     *
+     * @return array<string, string>
+     * @author michtio
+     */
+    public function envValues(): array
+    {
+        return array_merge($this->parseEnv('.env.example'), $this->parseEnv('.env'));
+    }
+
     // Private Methods
     // =========================================================================
 
@@ -189,5 +314,46 @@ final class Project
         }
 
         return $type;
+    }
+
+    /**
+     * Parse one dotenv file into key => value (comments and blank lines skipped, quotes removed).
+     *
+     * @return array<string, string>
+     * @author michtio
+     */
+    private function parseEnv(string $file): array
+    {
+        $path = $this->root.'/'.$file;
+
+        if (! is_file($path)) {
+            return [];
+        }
+
+        $values = [];
+
+        foreach (preg_split('/\r\n|\n/', (string) file_get_contents($path)) ?: [] as $line) {
+            $line = trim($line);
+
+            if ($line === '' || str_starts_with($line, '#')) {
+                continue;
+            }
+
+            if (preg_match('/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_.]*)\s*=\s*(.*)$/', $line, $match) !== 1) {
+                continue;
+            }
+
+            $value = $match[2];
+
+            if (strlen($value) >= 2 && ($value[0] === '"' || $value[0] === "'") && str_ends_with($value, $value[0])) {
+                $value = substr($value, 1, -1);
+            } else {
+                $value = trim((string) preg_replace('/\s+#.*$/', '', $value));
+            }
+
+            $values[$match[1]] = $value;
+        }
+
+        return $values;
     }
 }

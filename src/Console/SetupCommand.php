@@ -6,12 +6,19 @@ namespace Michtio\LaravelClaudeSkills\Console;
 
 use Illuminate\Console\Command;
 use Michtio\LaravelClaudeSkills\Setup\FileChange;
+use Michtio\LaravelClaudeSkills\Setup\GitFiles;
 use Michtio\LaravelClaudeSkills\Setup\PathGuard;
 use Michtio\LaravelClaudeSkills\Setup\PlannedFile;
+use Michtio\LaravelClaudeSkills\Setup\Planners\ComposerScriptPlanner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\CoreOverridePlanner;
+use Michtio\LaravelClaudeSkills\Setup\Planners\DdevDatabasePlanner;
+use Michtio\LaravelClaudeSkills\Setup\Planners\HooksPathPlanner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\McpPlanner;
+use Michtio\LaravelClaudeSkills\Setup\Planners\PhpunitPlanner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\Planner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\RunnerGuidelinePlanner;
+use Michtio\LaravelClaudeSkills\Setup\Planners\StaticFilePlanner;
+use Michtio\LaravelClaudeSkills\Setup\Planners\TestbenchYamlPlanner;
 use Michtio\LaravelClaudeSkills\Setup\Project;
 use Michtio\LaravelClaudeSkills\Setup\SetupException;
 use Michtio\LaravelClaudeSkills\Setup\SetupPlan;
@@ -31,6 +38,12 @@ use Symfony\Component\Console\Formatter\OutputFormatter;
  * CLAUDE.md or any other file Boost generates; it corrects Boost's host-command
  * guidance through Boost's own paths (.ai/guidelines/, .mcp.json).
  *
+ * It also isolates the test suite (forced PHPUnit pins, a separate test database
+ * with a DDEV post-start hook), sets the one gate command (composer test), writes
+ * the commit-msg hook and the secret scan, plans `git config core.hooksPath`, and
+ * makes a Testbench package its own skeleton so Boost reads the package's files.
+ * Every change, the git setting included, is shown first and confirmed once.
+ *
  * Exit codes: 0 when done, declined or nothing to do; 1 with --check when
  * something would change, and when the project is in a state it refuses to touch.
  *
@@ -48,6 +61,15 @@ final class SetupCommand extends Command
         McpPlanner::PATH,
         RunnerGuidelinePlanner::PATH,
         CoreOverridePlanner::PATH,
+        'phpunit.xml',
+        'phpunit.xml.dist',
+        ComposerScriptPlanner::PATH,
+        DdevDatabasePlanner::PATH,
+        GitFiles::COMMIT_MSG,
+        GitFiles::GITLEAKS_CHECK,
+        GitFiles::GITLEAKS_CONFIG,
+        TestbenchYamlPlanner::PATH,
+        ...GitFiles::SKELETON_IGNORES,
         SetupState::PATH,
     ];
 
@@ -69,7 +91,7 @@ final class SetupCommand extends Command
      *
      * @var string
      */
-    protected $description = 'Set up Claude Code for this project on top of Laravel Boost (runner, MCP, guidelines)';
+    protected $description = 'Set up Claude Code for this project on top of Laravel Boost (runner, MCP, guidelines, test isolation, gate, hooks)';
 
     // Public Methods
     // =========================================================================
@@ -96,7 +118,7 @@ final class SetupCommand extends Command
 
         try {
             PathGuard::assertAllSafe($root, self::OWNED_PATHS);
-            $plan = SetupPlan::build($project, $this->planners());
+            $plan = SetupPlan::build($project, $this->planners(), [new HooksPathPlanner()]);
         } catch (SetupException $exception) {
             $this->error($exception->getMessage());
 
@@ -117,8 +139,13 @@ final class SetupCommand extends Command
             $this->show($change);
         }
 
-        $count = count($plan->changes);
-        $summary = $count === 1 ? '1 file' : $count.' files';
+        foreach ($plan->actions as $action) {
+            $this->newLine();
+            $this->line('Run: '.$action->line);
+        }
+
+        $count = count($plan->changes) + count($plan->actions);
+        $summary = $count === 1 ? '1 change' : $count.' changes';
 
         if ($this->option('check')) {
             $this->line($summary.' would change. Run claude-skills:setup to apply.');
@@ -146,11 +173,24 @@ final class SetupCommand extends Command
      */
     private function planners(): array
     {
-        return [
+        $planners = [
             new McpPlanner(),
             new RunnerGuidelinePlanner(),
             new CoreOverridePlanner(),
+            new PhpunitPlanner(),
+            new ComposerScriptPlanner(),
+            new DdevDatabasePlanner(),
+            new StaticFilePlanner(GitFiles::COMMIT_MSG, GitFiles::commitMsg(), true),
+            new StaticFilePlanner(GitFiles::GITLEAKS_CHECK, GitFiles::gitleaksCheck(), true),
+            new StaticFilePlanner(GitFiles::GITLEAKS_CONFIG, GitFiles::gitleaksConfig()),
+            new TestbenchYamlPlanner(),
         ];
+
+        foreach (GitFiles::SKELETON_IGNORES as $path) {
+            $planners[] = new StaticFilePlanner($path, GitFiles::IGNORE_ALL, false, static fn (Project $project): bool => $project->isPackage());
+        }
+
+        return $planners;
     }
 
     /**
@@ -222,6 +262,7 @@ final class SetupCommand extends Command
     private function applyPlan(string $root, SetupPlan $plan): bool
     {
         $written = [];
+        $actionsRun = 0;
         $stateChange = null;
         $failure = null;
 
@@ -245,6 +286,25 @@ final class SetupCommand extends Command
             $written[] = $change->path;
         }
 
+        if ($failure === null) {
+            foreach ($plan->actions as $action) {
+                if (! $action->stillValid()) {
+                    $failure = 'The git configuration changed since the plan was shown; `'.$action->line.'` was not run.';
+
+                    break;
+                }
+
+                if (! $action->run()) {
+                    $failure = '`'.$action->line.'` failed.';
+
+                    break;
+                }
+
+                $this->line('Ran '.$action->line);
+                $actionsRun++;
+            }
+        }
+
         // The state records only what was written, so it is written even after a refusal.
         $state = $plan->stateAfter($written);
         $stateBefore = $stateChange !== null ? $stateChange->before : PlannedFile::read($root, SetupState::PATH);
@@ -266,8 +326,8 @@ final class SetupCommand extends Command
             return false;
         }
 
-        $count = count($written);
-        $this->info('Applied: '.($count === 1 ? '1 file' : $count.' files').'.');
+        $count = count($written) + $actionsRun;
+        $this->info('Applied: '.($count === 1 ? '1 change' : $count.' changes').'.');
 
         return true;
     }
@@ -321,6 +381,10 @@ final class SetupCommand extends Command
         }
 
         if (file_put_contents($file, $change->after) === false) {
+            return false;
+        }
+
+        if ($change->executable && ! chmod($file, (fileperms($file) & 0777) | 0111)) {
             return false;
         }
 

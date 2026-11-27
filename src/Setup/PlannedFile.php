@@ -29,6 +29,9 @@ final class PlannedFile
      * @param string|null $desiredFingerprint Fingerprint of the owned part as the setup writes it, null with $desired.
      * @param bool $unrecordedIsHandEdit Whether an existing, differing file the setup has no record of counts as edited by hand.
      * @param string|null $foreignNote A note shown instead of the hand-edit warning when the owned part was rewritten by a known tool.
+     * @param bool|null $unrecordedEdit The planner's own verdict for an existing file the setup has no record of (overrides the fingerprint rule).
+     * @param bool $executable Whether the file must carry the executable bits.
+     * @param bool $currentExecutable Whether the file carries them now.
      * @author michtio
      */
     public function __construct(
@@ -39,6 +42,9 @@ final class PlannedFile
         public readonly ?string $desiredFingerprint,
         public readonly bool $unrecordedIsHandEdit = true,
         public readonly ?string $foreignNote = null,
+        public readonly ?bool $unrecordedEdit = null,
+        public readonly bool $executable = false,
+        public readonly bool $currentExecutable = false,
     ) {
     }
 
@@ -47,7 +53,7 @@ final class PlannedFile
      *
      * @author michtio
      */
-    public static function whole(string $root, string $path, ?string $desired): self
+    public static function whole(string $root, string $path, ?string $desired, bool $executable = false): self
     {
         $current = self::read($root, $path);
 
@@ -57,6 +63,8 @@ final class PlannedFile
             $desired,
             $current === null ? null : SetupState::fingerprint($current),
             $desired === null ? null : SetupState::fingerprint($desired),
+            executable: $executable,
+            currentExecutable: $current !== null && (fileperms($root.'/'.$path) & 0111) !== 0,
         );
     }
 
