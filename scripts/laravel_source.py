@@ -8,10 +8,11 @@ Subcommands:
         src/Illuminate/ and config/ directories are read
   check [PATHS...]
         check every Laravel symbol named in the given files or directories (default:
-        resources/boost/skills and agents) against the index. Exit 1 on a symbol that
+        resources/boost/skills and agents) against the index. A directory is searched
+        for *.md and *.blade.php files (Boost guidelines are Blade-rendered markdown). Exit 1 on a symbol that
         does not exist, 0 when all resolve, 2 on a usage or data error.
 
-What `check` looks at in each markdown file:
+What `check` looks at in each markdown or Blade guideline file:
   - fully qualified Illuminate\\... names anywhere in the file, and Illuminate\\...::member
   - `use Illuminate\\...;` lines (group syntax included)
   - Short::member in inline code and fenced code, where Short is imported in the block,
@@ -378,7 +379,7 @@ def load_allow(path: Path = ALLOW_TSV) -> tuple[set[str], set[str]]:
         if len(parts) < 2 or not parts[0].strip() or not parts[1].strip():
             raise UsageError(f"{path.relative_to(REPO)}:{n}: allowlist rows need symbol<TAB>reason")
         key = parts[0].strip()
-        (lines if re.search(r"\.md:\d+$", key) else syms).add(key)
+        (lines if re.search(r"\.(?:md|blade\.php):\d+$", key) else syms).add(key)
     return syms, lines
 
 
@@ -501,7 +502,7 @@ def cmd_check(args) -> int:
         if p.is_file():
             targets.append((given, p))
         elif p.is_dir():
-            for f in sorted(p.rglob("*.md")):
+            for f in sorted({*p.rglob("*.md"), *p.rglob("*.blade.php")}):
                 targets.append((str(Path(given) / f.relative_to(p)), f))
         elif args.paths:
             raise UsageError(f"{given}: no such file or directory")

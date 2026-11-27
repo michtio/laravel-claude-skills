@@ -16,7 +16,7 @@
 #   deny list      scripts/check_deny_list.py (no git-tracked file names a term from the
 #                  git-ignored internal-docs/deny-list.txt; skipped when it is absent)
 #   symbols        scripts/laravel_source.py check (every Illuminate class, facade, method,
-#                  artisan command and config key the skills and agents name exists in the
+#                  artisan command and config key the skills, guidelines and agents name exists in the
 #                  pinned laravel/framework; index in scripts/data/, refreshed with network
 #                  by scripts/refresh-laravel-data.sh, read here without it)
 # Each check must also FAIL on its bad fixture in evals/fixtures/; those negative
@@ -72,7 +72,7 @@ must_fail() {
 # The package itself.
 gate      "frontmatter (resources/boost/skills)" bash scripts/validate-skills.sh
 gate      "agent startup budget (48 KB; checker 16 KB; caps <= 5; read-only tool rules)" python3 scripts/agent_budget.py
-gate      "symbols (resources/boost/skills, agents) exist in laravel/framework $(cat scripts/data/laravel-source-tag.txt 2>/dev/null)" python3 scripts/laravel_source.py check resources/boost/skills agents
+gate      "symbols (resources/boost/skills, resources/boost/guidelines, agents) exist in laravel/framework $(cat scripts/data/laravel-source-tag.txt 2>/dev/null)" python3 scripts/laravel_source.py check resources/boost/skills resources/boost/guidelines agents
 gate      "gap lines (every laravel-pitfalls reference names its Boost gap)" python3 scripts/check_pitfalls.py
 gate      "deny list (published tree names no client, app, company or person; skipped without internal-docs/deny-list.txt)" python3 scripts/check_deny_list.py
 
