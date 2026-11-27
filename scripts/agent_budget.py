@@ -21,9 +21,9 @@ Rules (tests/gate/CONTRACT.md section 1):
     N <= 5;
   - a `*-checker` or `*-gate-writer` agent never has the Agent tool, and a
     planner or reviewer without a `tools:` line disallows it. One exemption
-    (plan AD12, decided 2026-11-27 after S1): the deep reviewer
-    (`laravel-reviewer-deep`, or any name ending `-reviewer-deep`, in both the
-    file stem and the `name:`) is an orchestrator, so it may inherit Agent;
+    (plan AD12, decided 2026-11-27 after S1): the deep reviewer, by the exact
+    name `laravel-reviewer-deep` in both the file stem and the `name:`, is an
+    orchestrator, so it may inherit Agent (another `*-reviewer-deep` is not);
     the cap rules below then apply to it, so it still needs a cap line of at
     most 5. A plain reviewer is never exempt, with or without a cap line;
   - a read-only agent (planner, reviewer, checker or gate-writer) disallows
@@ -57,6 +57,7 @@ RECORD_RULE = "mcp__laravel-boost__record-rule"  # writes .ai/rules
 WRITE_TOOLS = ("Write", "Edit", "NotebookEdit")
 READ_ONLY_MARKERS = ("planner", "reviewer", "checker", "gate-writer")
 NO_WRITE_MARKERS = ("planner", "reviewer", "checker")
+DEEP_REVIEWER = "laravel-reviewer-deep"  # the one reviewer that orchestrates (AD12)
 
 
 AGENT_TOOLS = ("Agent", "Task")  # Task is the old name of the Agent tool
@@ -165,9 +166,9 @@ def check(agent: Path, skills_dir: Path) -> tuple[str, list[str]]:
         return any(label.endswith(s) for label in labels for s in suffixes)
 
     # The deep reviewer orchestrates lens checkers (plan AD12): exempt from
-    # "a reviewer disallows Agent" by name only, and only when the stem and the
-    # name: both say so. The cap-line rules still apply to it.
-    deep_reviewer = all(label.endswith("-reviewer-deep") for label in labels)
+    # "a reviewer disallows Agent" by its exact name only, and only when the stem
+    # and the name: both carry it. The cap-line rules still apply to it.
+    deep_reviewer = all(label == DEEP_REVIEWER for label in labels)
 
     # Agent tool: stated in `tools:` (any form), or inherited when there is no
     # `tools:` line (plan AD3), unless `disallowedTools:` removes it.

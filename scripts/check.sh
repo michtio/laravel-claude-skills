@@ -96,6 +96,7 @@ must_fail "agent self-test (quoted effort xhigh on a reviewer)" "reviewer agents
 must_fail "agent self-test (deep reviewer inherits Agent, no cap line)" "Agent tool without an 'At most N agents per run|review' line" python3 scripts/agent_budget.py --root evals/fixtures/agent-reviewer-deep-no-cap
 must_fail "agent self-test (deep reviewer, cap 6)" "cap above 5" python3 scripts/agent_budget.py --root evals/fixtures/agent-reviewer-deep-cap-6
 must_fail "agent self-test (plain reviewer with a cap line still inherits Agent)" "must disallow Agent" python3 scripts/agent_budget.py --root evals/fixtures/agent-reviewer-with-cap-line
+must_fail "agent self-test (another *-reviewer-deep name is not exempt)" "must disallow Agent" python3 scripts/agent_budget.py --root evals/fixtures/agent-other-reviewer-deep
 must_fail "agent self-test (debugger inherits Agent, no cap line)" "Agent tool without an 'At most N agents per run|review' line" python3 scripts/agent_budget.py --root evals/fixtures/agent-debugger-with-agent
 gate      "agent rules pass on evals/fixtures/agent-reviewer-deep-orchestrator (cap 5)" python3 scripts/agent_budget.py --root evals/fixtures/agent-reviewer-deep-orchestrator
 gate      "agent rules pass on evals/fixtures/agent-debugger-valid (cap 0)" python3 scripts/agent_budget.py --root evals/fixtures/agent-debugger-valid

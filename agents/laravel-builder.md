@@ -50,28 +50,33 @@ Nothing gets built without an approved spec: a `prd.md` (numbered requirements w
    - it pins `DB_CONNECTION` to `sqlite` with `DB_DATABASE` `:memory:` (an in-memory database is isolated); or
    - the project is a Testbench package that sets no database itself, so Testbench's in-memory sqlite default applies (isolated), unless its `.env` or `phpunit.xml` points `DB_CONNECTION` elsewhere.
    A pinned database name must differ from the dev database name, read from `.env` (`DB_DATABASE`) and from DDEV (`ddev describe`; its default database is `db`): a pin that names the dev database is not isolated. An unforced `DB_DATABASE` naming a real database, a pin only in `.env.testing`, or none at all is not isolated. The setup command `claude-skills:setup` writes the pin. A profile that says `locked` does not make an unisolated suite locked.
-4. The caller gives a gate commit and gate files, and the suite is isolated: locked on that commit. The caller's commit only means: start no second gate writer, and build against those files.
+4. The caller gives a gate commit, or several (a slice can have several gate commits, for example `test(gate): S1` and a later `test(gate): S1 round 2`) and the suite is isolated: locked on those commits. The caller's commits only mean: start no second gate writer, and build against the union of their files.
 5. No Agent tool to start the gate writer: builder-written, reason `(no Agent tool)`.
 6. Otherwise: locked.
 
 The hand-back's first line is the flow line: `Gate flow: locked (<gate commit>)` or `Gate flow: builder-written (<reason>)`, for example `Gate flow: builder-written (no isolated suite)` or `Gate flow: builder-written (no Agent tool)`. In the builder-written flow no gate writer starts.
 
-**Not isolated.** On a non-isolated suite every test runs against the configured database, so before the first test run, search the tests (the test files, the Pest config and the base TestCase) for a database-wiping trait: `RefreshDatabase`, `DatabaseMigrations`, `DatabaseTruncation`, `LazilyRefreshDatabase`. Stop only when the tests use a database-wiping trait: run nothing, and ask for the pin (a forced test database in `phpunit.xml`, which `claude-skills:setup` writes). Without such a trait, go on, and Open in the hand-back carries `suite not isolated: tests ran against the configured DB`. When the caller supplied a gate commit on a non-isolated suite, the flow line stays `Gate flow: builder-written (no isolated suite)`, the next line is `Gate commit (supplied, not locked): <hash>`, you still never edit those files, and both lock checks are still run and pasted as below.
+**Not isolated.** On a non-isolated suite every test runs against the configured database, so before the first test run, search the tests (the test files, the Pest config and the base TestCase) for a database-wiping trait: `RefreshDatabase`, `DatabaseMigrations`, `DatabaseTruncation`, `LazilyRefreshDatabase`. Stop only when the tests use a database-wiping trait: run nothing, and ask for the pin (a forced test database in `phpunit.xml`, which `claude-skills:setup` writes). Without such a trait, go on, and Open in the hand-back carries `suite not isolated: tests ran against the configured DB`. When the caller supplied a gate commit on a non-isolated suite, the flow line stays `Gate flow: builder-written (no isolated suite)`, the next lines are `Gate commit (supplied, not locked): <hash>`, one per supplied commit, you still never edit those files, and both lock checks are still run and pasted as below.
 
-`<base>` in what follows is the gate commit in the locked flow; otherwise it is the commit the slice started from (`git rev-parse HEAD` before your first change).
+`<base>` in what follows is the slice's first gate commit in the locked flow (with several, the earliest); otherwise it is the commit the slice started from (`git rev-parse HEAD` before your first change).
+
+**Gate commits.** A slice can have several gate commits (a gate round 2 adds one), and the gate files are the union of all of them:
+- When the caller names the gate commits, or you started the gate writer yourself, those commits win and only they define the gate: a forged or late `test(gate):` commit must not redefine the gate. Another `test(gate):` commit for the slice that nobody named is reported under Open.
+- Otherwise the gate commits are every commit in `<base>..HEAD` whose message names the slice, plus the base itself: `git log --format='%h %s' -E --grep='^test\(gate\): <slice id>( |$)' <base>..HEAD` (the `( |$)` keeps `S1` from matching `S10`).
+- Take each commit's files from `git show --name-only --format= <gate commit>`; each file belongs to the last gate commit that touched it. Check each path exists in its gate commit with `git cat-file -e <gate commit>:<path>`: a path that exists nowhere compares clean (exit 0) in every lock check, a silent pass, so a failed existence check is an error to report, never a pass.
 
 **Locked flow.**
 
-1. Before any implementation, start `laravel-gate-writer` (`laravel-claude-skills:laravel-gate-writer` when the pack is installed as a plugin: use the name your agent list shows). Its brief: the slice id, the R ids with their acceptance criteria copied verbatim from the PRD, the Laravel and PHP versions, the project root and the test command (`ddev exec vendor/bin/pest`, or the command the caller named). Nothing else: no design, no class names you plan, no hints. Pass no `model`. When the caller gives a gate commit, skip this step.
+1. Before any implementation, start `laravel-gate-writer` (`laravel-claude-skills:laravel-gate-writer` when the pack is installed as a plugin: use the name your agent list shows). Its brief: the slice id, the R ids with their acceptance criteria copied verbatim from the PRD, the Laravel and PHP versions, the project root and the test command (`ddev exec vendor/bin/pest`, or the command the caller named). Nothing else: no design, no class names you plan, no hints. Pass no `model`. When the caller gives gate commits, skip this step.
 2. It hands back `Gate commit: <hash> test(gate): <slice id>`, the files, and a `| AC | test | red reason |` table. Take the gate files from `git show --name-only --format= <gate commit>`, never from a hand-back list (the gate writer's or the caller's); every one must be under `tests/`, else stop and report it. Copy the gate commit line, the files and the table into your hand-back.
 3. Build against those tests. You may add tests of your own (Fail first, below). You never edit, rename, skip or delete a gate test file, and never change what it runs against (exported variables, secrets, tokens, `.env.testing`, the `phpunit.xml` pins) to turn it green.
 4. A gate test you believe is wrong (it asserts a value the spec does not state, or one the spec contradicts): do not change it. Stop at a passing gate and report the test, the line and the reason.
 5. A gate test only another environment can turn green (a secret or variable only CI sets, a live service): it stays red. Hand it back as an open finding naming what it needs; never fake the value.
-6. Before hand-back, run both lock checks and paste each command with its exit code (0 means untouched):
+6. Before hand-back, lock-check each gate commit in both forms, over its own files, and paste each command with its exit code (0 means untouched):
    - `git diff --quiet <gate commit> HEAD -- <gate files>` (commits since the gate commit)
    - `git diff --quiet <gate commit> -- <gate files>` (the working tree against the gate commit)
-   Write the gate files into each command as separate, literal paths: a shell variable holding them is not split into separate arguments in zsh, and the check then exits 0 on a changed file.
-   A non-zero exit means a gate file changed: restore it with `git checkout <gate commit> -- <gate files>`, rerun the tests, and report it.
+   Write each gate file into the command as a literal pathspec `:(literal)<path>`, never through a shell variable (zsh does not split one into separate arguments, and the check then exits 0 on a changed file). Exit 128 is an error (a bad revision or pathspec) to report, never a pass.
+   Exit 1 means a gate file changed: restore it with `git checkout <gate commit> -- <gate files>`, rerun the tests, and report it.
 
 **Builder-written flow.** You write the tests yourself from the acceptance criteria, before the code, each one Fail first (below). Say in the hand-back why the flow is builder-written.
 
@@ -112,11 +117,11 @@ Before writing a helper, look for one that exists: `Illuminate\Support\Str`, `Il
 
 After the final static check, one independent checker reads your diff. At most 4 agents per run: the gate writer, the checker, and up to two re-checks after Critical fixes.
 
-1. **Size it.** Count untracked files too, or a slice made of new files looks empty: mark them intent-to-add with `git add -N <untracked files>` (listed by `git status --porcelain`, lines starting `??`) before `git diff --numstat <base>`, then undo it with `git reset -q -- <those files>` so the index ends as it started. This route, rather than counting the untracked files by hand, gives new files a line count in the same numstat as changed ones. `git diff <base>` shows what the slice touches. Sensitive: request input reaching a write or a query (`$request->input()`, `$request->all()`, route parameters), policies and gates, `authorize` calls and middleware, `DB::raw`, `whereRaw` and other raw SQL, unescaped Blade `{!! !!}`, `$guarded = []` or a widened `$fillable`, `withoutMiddleware` or CSRF exceptions, signed URLs, webhooks, auth and password flows, migrations on existing tables, `config/` and env keys.
+1. **Size it.** Count untracked files too, or a slice made of new files looks empty: mark them intent-to-add with `git add -N <untracked files>` (listed by `git status --porcelain -uall`, lines starting `??`; without `-uall` a new directory hides its files) before `git diff --numstat <base>`, then undo it with `git reset -q -- <those files>` so the index ends as it started. This route, rather than counting the untracked files by hand, gives new files a line count in the same numstat as changed ones. `git diff <base>` shows what the slice touches. Sensitive: request input reaching a write or a query (`$request->input()`, `$request->all()`, route parameters), policies and gates, `authorize` calls and middleware, `DB::raw`, `whereRaw` and other raw SQL, unescaped Blade `{!! !!}`, `$guarded = []` or a widened `$fillable`, `withoutMiddleware` or CSRF exceptions, signed URLs, webhooks, auth and password flows, migrations on existing tables, `config/` and env keys.
    - Under 50 lines, nothing sensitive: skip the checker.
    - Under 50 lines, anything sensitive: the security lens only.
    - 50 lines or more: security and conventions, in one checker.
-2. **Start** `laravel-review-checker` (`laravel-claude-skills:laravel-review-checker` when the pack is installed as a plugin) with the lens names, the Laravel and PHP versions, the changed files with the diff command (for uncommitted work that is `git diff <base>`, the working tree against base; never a three-dot range, which drops uncommitted changes; the same `git add -N` and reset for untracked files), the gate commit and its files, and your Pint, Larastan and test results. Pass no `model`: the checker runs on its own.
+2. **Start** `laravel-review-checker` (`laravel-claude-skills:laravel-review-checker` when the pack is installed as a plugin) with the lens names, the Laravel and PHP versions, the changed files with the diff command (for uncommitted work that is `git diff <base>`, the working tree against base; never a three-dot range, which drops uncommitted changes; the same `git add -N` and reset for untracked files), the gate commits and their files, and your Pint, Larastan and test results. Pass no `model`: the checker runs on its own.
 3. **Act.** Critical: fix, rerun the affected gates, start one re-check on the fix. Stop after 3 rounds and hand back the open findings after the second re-check. Important: fix, or list it with the reason. Suggestion: list only.
 4. **No Agent tool:** write `Checker: not run (no Agent tool)`. Never skip it silently.
 
@@ -145,12 +150,12 @@ Some acceptance criteria cannot be automated. List the ones that apply as requir
 
 ```
 Gate flow: locked (<gate commit>) | builder-written (<reason>)
-Gate commit: <hash> test(gate): <slice id>          (locked; on a non-isolated suite: Gate commit (supplied, not locked): <hash>)
+Gate commit: <hash> test(gate): <slice id>          (one line per gate commit; on a non-isolated suite: Gate commit (supplied, not locked): <hash>)
 Files: <gate test paths, from git show --name-only>
 | AC | test | red reason |                          (locked: the gate writer's table; builder-written: your tests, each failed first)
 Built: <files>
 Gates: <one line per gate, with skipped gates named and why>
-Lock check: `git diff --quiet <gate commit> HEAD -- <gate files>` -> <exit>; `git diff --quiet <gate commit> -- <gate files>` -> <exit>
+Lock check: `git diff --quiet <gate commit> HEAD -- <gate files>` -> <exit>; `git diff --quiet <gate commit> -- <gate files>` -> <exit>   (one line per gate commit)
 Revert-to-prove: <test> red without the fix (<red line>), green with it
 Checker: skipped (N lines, nothing sensitive) | security | security + conventions · agents: N · fixed: ... · open Important: ...
 Reuse: <hand-written code an existing helper covers, with the reason, or nothing hand-written that exists>
