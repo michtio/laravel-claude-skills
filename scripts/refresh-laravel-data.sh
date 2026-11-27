@@ -7,11 +7,13 @@
 #   sh scripts/refresh-laravel-data.sh --check    # rebuild the committed tag's index to a
 #                                                 # temp file and compare byte for byte
 #
-# Writes scripts/data/laravel-source-tag.txt and scripts/data/laravel-source-index.tsv.
+# Writes scripts/data/laravel-source-tag.txt, scripts/data/laravel-source-commit.txt (the
+# commit SHA the tag resolved to) and scripts/data/laravel-source-index.tsv. Both modes
+# fail when the committed tag now resolves to a different commit (a moved tag).
 # A moved pin can make scripts/check.sh fail: that is the point, fix the package.
 #
 # Exit: 0 done (or --check: identical), 1 --check: the committed index differs,
-#       2 usage, network or source error.
+#       2 usage, network or source error, or the pinned tag moved to another commit.
 # Requires: git, python3 (3.9+).
 
 set -u
@@ -21,6 +23,7 @@ url=https://github.com/laravel/framework
 major=13
 tag_file="$repo/scripts/data/laravel-source-tag.txt"
 index="$repo/scripts/data/laravel-source-index.tsv"
+commit_file="$repo/scripts/data/laravel-source-commit.txt"
 
 mode=refresh
 tag=
@@ -38,6 +41,7 @@ if [ "$mode" = check ]; then
     [ -n "$tag" ] || tag=$(cat "$tag_file" 2>/dev/null)
     [ -n "$tag" ] || { echo "refresh-laravel-data.sh: no tag in $tag_file" >&2; exit 2; }
     [ -f "$index" ] || { echo "refresh-laravel-data.sh: no committed index at $index" >&2; exit 2; }
+    [ -s "$commit_file" ] || { echo "refresh-laravel-data.sh: no pinned commit in $commit_file" >&2; exit 2; }
 elif [ -z "$tag" ]; then
     # Newest stable vMAJOR.x.y tag; pre-releases (v13.0.0-beta1) are skipped.
     tag=$(git ls-remote --tags --refs "$url" "v$major.*" | sed 's|.*refs/tags/||' \
@@ -56,6 +60,15 @@ if ! git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$tag" "$
     echo "refresh-laravel-data.sh: could not fetch $url at $tag" >&2
     exit 2
 fi
+sha=$(git -C "$tmp/framework" rev-parse HEAD) || exit 2
+
+# The committed tag must still resolve to the committed commit.
+pinned_tag=$(cat "$tag_file" 2>/dev/null)
+pinned_sha=$(cat "$commit_file" 2>/dev/null)
+if [ "$tag" = "$pinned_tag" ] && [ -n "$pinned_sha" ] && [ "$sha" != "$pinned_sha" ]; then
+    echo "refresh-laravel-data.sh: laravel/framework $tag moved: pinned commit $pinned_sha, tag now resolves to $sha" >&2
+    exit 2
+fi
 
 if [ "$mode" = check ]; then
     python3 "$repo/scripts/laravel_source.py" index "$tmp/framework" --tag "$tag" --out "$tmp/index.tsv" || exit 2
@@ -69,5 +82,6 @@ if [ "$mode" = check ]; then
 fi
 
 python3 "$repo/scripts/laravel_source.py" index "$tmp/framework" --tag "$tag" || exit 2
+echo "$sha" > "$commit_file"
 sh "$repo/scripts/check.sh" >/dev/null || echo "check.sh fails against laravel/framework $tag: fix the package"
 echo "done; review: git diff -- scripts/data/"
