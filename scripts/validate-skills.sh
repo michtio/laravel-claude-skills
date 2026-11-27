@@ -14,6 +14,8 @@
 # Checks, per skill:
 #   - frontmatter parses as strict YAML
 #   - only known keys: the spec's fields plus Claude Code's `when_to_use`
+#   - name, description and when_to_use are strings (YAML `name: 123` or
+#     `description: [a]` is rejected)
 #   - name: 1-64 chars, lowercase letters/digits/hyphens, matches the directory
 #   - description: 1-1024 chars (spec limit)
 #   - description + " - " + when_to_use: <= 1300 chars, the package budget
@@ -84,12 +86,17 @@ ARGV.each do |path|
       extra = fm.keys - ALLOWED
       errors << "unknown keys: #{extra.join(', ')}" unless extra.empty?
 
-      name = fm["name"].to_s
+      %w[name description when_to_use].each do |key|
+        next unless fm.key?(key)
+        errors << "#{key} must be a string, got #{fm[key].class}" unless fm[key].is_a?(String)
+      end
+
+      name = fm["name"].is_a?(String) ? fm["name"] : ""
       errors << "name '#{name}' does not match directory '#{skill}'" unless name == skill
       errors << "name must be 1-64 lowercase letters, digits, hyphens" unless name.match?(/\A[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?\z/)
 
-      desc = fm["description"].to_s
-      wtu = fm["when_to_use"].to_s
+      desc = fm["description"].is_a?(String) ? fm["description"] : ""
+      wtu = fm["when_to_use"].is_a?(String) ? fm["when_to_use"] : ""
       errors << "description is empty" if desc.strip.empty?
       errors << "description is #{desc.length} chars (max #{DESC_MAX})" if desc.length > DESC_MAX
 
