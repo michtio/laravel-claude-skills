@@ -11,6 +11,10 @@
 #   agent-budget   scripts/agent_budget.py (48 KB startup, checker 16 KB, agent caps <= 5,
 #                  no Agent on checkers or the gate writer, tinker, record-rule and
 #                  write tools disallowed on read-only agents, no xhigh reviewers)
+#   symbols        scripts/laravel_source.py check (every Illuminate class, facade, method,
+#                  artisan command and config key the skills and agents name exists in the
+#                  pinned laravel/framework; index in scripts/data/, refreshed with network
+#                  by scripts/refresh-laravel-data.sh, read here without it)
 # Each check must also FAIL on its bad fixture in evals/fixtures/; those negative
 # tests run here too, so a check that silently stops checking turns CI red.
 # Later slices append their gates.
@@ -64,6 +68,7 @@ must_fail() {
 # The package itself.
 gate      "frontmatter (resources/boost/skills)" bash scripts/validate-skills.sh
 gate      "agent startup budget (48 KB; checker 16 KB; caps <= 5; read-only tool rules)" python3 scripts/agent_budget.py
+gate      "symbols (resources/boost/skills, agents) exist in laravel/framework $(cat scripts/data/laravel-source-tag.txt 2>/dev/null)" python3 scripts/laravel_source.py check resources/boost/skills agents
 
 # Self-tests: each check fails on its bad fixture, and passes on the valid one.
 must_fail "agent self-test (Agent tool, no cap line)" "Agent tool without an 'At most N agents per run|review' line" python3 scripts/agent_budget.py --root evals/fixtures/agent-no-cap
@@ -83,6 +88,10 @@ must_fail "agent self-test (checker by name: field)" "must not have the Agent to
 must_fail "agent self-test (quoted effort xhigh on a reviewer)" "reviewer agents use effort high, not xhigh" python3 scripts/agent_budget.py --root evals/fixtures/reviewer-effort-xhigh-quoted
 must_fail "skill self-test (body over 12 KB)" "max 12288" bash scripts/validate-skills.sh --root evals/fixtures/skill-body-over-12kb
 must_fail "skill self-test (listing over 1300)" "max 1300" bash scripts/validate-skills.sh --root evals/fixtures/skill-listing-over-1300
+must_fail "symbol self-test (missing facade method)" "Illuminate\\Support\\Facades\\DB::transactional() not found" python3 scripts/laravel_source.py check evals/fixtures/symbol-missing-method
+must_fail "symbol self-test (missing class)" "Illuminate\\Support\\Facades\\Transactor not found" python3 scripts/laravel_source.py check evals/fixtures/symbol-missing-class
+must_fail "symbol self-test (missing artisan command)" "artisan queue:explode not found" python3 scripts/laravel_source.py check evals/fixtures/symbol-missing-command
+gate      "symbols pass on evals/fixtures/symbol-valid" python3 scripts/laravel_source.py check evals/fixtures/symbol-valid
 gate      "agent rules pass on evals/fixtures/valid" python3 scripts/agent_budget.py --root evals/fixtures/valid
 gate      "skill rules pass on evals/fixtures/valid" bash scripts/validate-skills.sh --root evals/fixtures/valid
 
