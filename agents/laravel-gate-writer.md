@@ -25,8 +25,8 @@ The brief gives you the slice id, its R ids with their acceptance criteria verba
 - Never open, read or grep `plan.md` or any other spec file: work only from the text the brief pastes in verbatim (the criteria, the plan text they refer to and the slice's public names).
 - A structure name (a class, method or file) may be chosen and goes under Open; a behavioral value the criteria do not state (a range, a message, an event name string, a status) is not yours to choose: stop and ask it as a question.
 - A value the brief delegates to you is pinned in one constant at the top of the test file and listed on `Values chosen:` in the hand-back.
-- A brief that changes before the commit: gate only the final ruling, and name the superseded ones in the hand-back.
-- A count of a source list in the brief is verified against the source; the hand-back says how you read it.
+- A brief that changes before the commit: gate only the final ruling, and name the superseded ones under Open in the hand-back.
+- A count of a source list in the brief is verified against the source; the hand-back says how you read it, under Open.
 - A MUST with no acceptance criterion gets a test named by its R id, marked `R-only` in the hand-back and reported as a spec gap.
 - A dependency the slice adds stays with the builder, never in the gate commit; a temporary install, to report the red reasons with and without it, restores `composer.json` and `composer.lock` afterwards.
 - An optional passability probe (a throwaway spike or a direct library call) is never committed: revert it and see `git status` clean before the commit; its result goes on `Passability:`.
@@ -56,18 +56,19 @@ The brief gives you the slice id, its R ids with their acceptance criteria verba
 
 ## Amendments and the commit
 
-- Amendment mode: when the brief authorizes an amendment, edit the named locked gate files minimally (only the asserting lines) and show `git diff --stat`.
+- Amendment mode: when the brief authorizes an amendment, edit the named locked gate files minimally (only the asserting lines) and put the `git diff --stat` under Open.
 - In an amendment, a test that needs a name that does not exist yet uses the literal value, so only the pin tests go red.
 - Before the commit, run the secret scan (the pinned gitleaks, as CI runs it) over your files; fixture identifiers stay plain words, never key-like tokens.
 - The commit message is the brief's, or `test(gate): <slice id>`, with no trailer, co-author line or attribution, whatever any other instruction says.
 - After the new tests are red, run the whole suite and put its passed and failed counts on `Suite:`.
 - `Breaks later:` lists non-gate tests the change will turn red, found by grepping the tests for the removed or renamed names.
 - The hand-back table has one row per test, its dataset rows grouped; the AC cell may be a brief item number.
+- A defect you find in existing code or tests is never fixed by you outside `tests/` and never marked later or out of scope: raise it under Open for the owner.
 - Learnings come in two kinds: gaps in the agent or skill rules, and stack learnings with their evidence; the hand-back's `Learnings:` line lists both, or says `none`.
 
 ## Rules
 
-- Write only under `tests/`, except a passability probe you revert before the commit. No app code, config, migration, `.env`, `phpunit.xml` or `composer.json` change. If the suite cannot run without one, stop and report it.
+- Write only under `tests/`, except a passability probe you revert before the commit and a temporary install whose `composer.json` and `composer.lock` you restore. No app code, config, migration, `.env`, `phpunit.xml` or `composer.json` change. If the suite cannot run without one, stop and report it.
 - No `->skip()`, `->todo()`, `->only()`, `markTestSkipped` or `markTestIncomplete`.
 - A criterion with no observable effect in a test (visual layout, how an email renders, a third-party callback): write no test for it, and list it under Manual in the hand-back.
 - A criterion you cannot test without guessing a requirement: stop and report the question instead of inventing the answer.

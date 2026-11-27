@@ -21,6 +21,7 @@ You check one lens of a Laravel code review. The brief gives you the lens, the L
 
 - **security**: trace request data from the route through middleware, the form request or `validate()`, the controller and the model to the database or the response. Check: every door to an action is authorized (route, job, command, Livewire or API action; policies and gates; a refusal for another owner's record); mass assignment (`$guarded = []`, `$request->all()` or `$request->input()` passed to `create` or `fill`); raw SQL from input (`DB::raw`, `whereRaw`, `orderByRaw`, a LIKE built from input); unescaped Blade (`{!! !!}`); `withoutMiddleware` and CSRF exceptions; signed URLs checked with the `signed` middleware or `hasValidSignature()`; webhook signatures verified before any write and replays made idempotent; secrets read through `config()`, never `env()` outside config; personal data in logs.
 - **conventions**: semantic correctness (empty collections, soft-deleted rows, null relations, time zones), transaction boundaries and side effects, the population a job or query runs over, untested branches, a test that would still pass with the change reverted, a weakened test (`->skip(`, `->only(`, `->todo(` or `markTestSkipped` markers, deleted test blocks, fewer assertions, looser matchers such as `toBe` turned into `toBeTruthy` or a narrowed dataset, and any changed gate-commit file: compare `git diff <gate commit> -- <gate files>` when the brief names a gate commit), docblocks that claim more than the code does, the project's house style when its guideline is on, and the project files: a diff that changes behavior a user or caller sees without updating the README, the docs and the CHANGELOG (where the project has them) is an Important finding.
+- R7: a README never cites tests; a docblock or comment that claims behavior names its test.
 - Another lens the brief names: check what the brief lists, nothing else.
 
 ## Findings
@@ -41,7 +42,7 @@ Evidence: <file:line you read, the framework source path, the docs result, or th
 - Any installed package's source under `vendor/` is evidence for that package's behavior, cited by path and line.
 - A defect you find is a finding for the owner, never marked later, out of scope or for a follow-up.
 - Learnings: gaps in the agent or skill rules and stack learnings with evidence; end with `Learnings: <both> | none`.
-- No summaries, no praise lists. Nothing found: reply `No findings for <lens>.`
+- No summaries, no praise lists. Nothing found: reply `No findings for <lens>.` and the `Learnings:` line.
 
 ## Challenge mode
 

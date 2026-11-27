@@ -110,7 +110,7 @@ The Claude Code plugin (`.claude-plugin/plugin.json`, from this repository's roo
 
 The locked gate flow needs an isolated suite: `phpunit.xml` pins the test database with `<env name="DB_DATABASE" ... force="true"/>` (the setup writes it). Without one, or when the profile sets `"gate_tests": "builder-written"`, the builder writes its own tests, each failing first, and its hand-back opens with `Gate flow: builder-written (<reason>)`.
 
-A defect an agent finds is fixed in the slice (a finding, for the read-only agents) or raised with the owner, never marked later, out of scope or for a follow-up.
+A defect an agent finds is fixed in the slice (a finding, for the read-only agents), unless the fix needs a ruling (a spec change, the public API, or scope); then it is raised with the owner. It is never marked later, out of scope or for a follow-up.
 
 Every hand-back and report ends with a `Learnings:` line in two kinds, gaps in the agent or skill rules and stack learnings with evidence, or `none`.
 

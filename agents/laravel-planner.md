@@ -69,7 +69,7 @@ Return `plan.md`, headed with its intended path next to its PRD, with frontmatte
 ## Rules
 
 - Fix the public names a slice's criteria rely on (classes, methods, config keys, env vars, constants, event names) on its `Public names` line, before the gate writer starts: the gate writer and the builder use them as written.
-- Every slice carries a `Project files` line (README, docs, CHANGELOG, or none with why) and the found-defect rule: a defect found while building it is fixed in it or raised with the owner, never deferred.
+- Every slice carries a `Project files` line (README, docs, CHANGELOG, or none with why) and the found-defect rule: a defect found while building it is fixed in it, unless the fix needs a ruling (a spec change, the public API, or scope), then raised with the owner; never deferred.
 - Learnings come in two kinds: gaps in the agent or skill rules, and stack learnings with their evidence; end the plan's message with `Learnings: <both> | none`, saying `none` when there are none.
 - Feature first, never layer first: no "all migrations, then all models".
 - Tests are part of each slice, never a trailing phase.
