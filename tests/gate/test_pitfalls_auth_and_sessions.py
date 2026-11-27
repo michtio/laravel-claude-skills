@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from skill_content import agent, line_in, pitfall  # noqa: E402
+from skill_content import agent, files, first_line, line_in, pitfall  # noqa: E402
 
 
 class SignInEvents(unittest.TestCase):
@@ -38,8 +38,14 @@ class RevokingOneDevice(unittest.TestCase):
                 label="logoutCurrentDevice() does not cycle the remember token")
         pitfall(self, 170, r"companion cookie", r"getRecallerName\(\)",
                 label="per-device revocation needs its own binding: a companion cookie named after getRecallerName()")
-        pitfall(self, 170, r"Login listener", r"(cannot|can't) refuse", r"middleware",
-                label="a Login listener cannot refuse a remember-me login; refuse in middleware after the guard's user()")
+        # Rows 170 and 178: SessionGuard::user() sets $this->user before it fires Login and returns the property after
+        # (SessionGuard.php:195-205), and logoutCurrentDevice() nulls it (:702-721), so the listener can refuse.
+        pitfall(self, 170, r"Login.{0,3} listener", r"viaRemember\(\)", r"logoutCurrentDevice\(\)", r"refuse",
+                label="refuse a revoked device's remember-me sign-in in the Login listener: on viaRemember(), call logoutCurrentDevice()")
+        pitfall(self, 170, r"middleware", r"second line", r"(opt-in|uncovered|every route)",
+                label="keep the middleware as the second line: an opt-in middleware leaves uncovered routes open")
+        claims = first_line(files("pitfalls"), (r"listener", r"(cannot|can't|can not|unable to) (refuse|veto|reject)"))
+        self.assertIsNone(claims, f"a pitfall still says a Login listener cannot refuse a remember-me login: {claims}")
         pitfall(self, 170, r"viaRemember\(\)", r"getUser\(\)", r"failed recaller|stays true",
                 label="tell the remember path apart with viaRemember() && getUser() === $event->user (viaRemember stays true after a failed recaller)")
 

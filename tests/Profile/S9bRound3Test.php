@@ -192,7 +192,8 @@ it('gives Profile::effective the same order', function () {
 
     $effective = Profile::load($dir)->effective();
 
-    expect(array_keys($effective))->toBe(['runner', 'house_style', 'phpstan_level', 'monitoring', 'ci', 'test_database', 'php_matrix', 'test_pins']);
+    expect(array_keys($effective))->toBe(['runner', 'house_style', 'phpstan_level', 'monitoring', 'ci', 'test_database', 'php_matrix', 'test_pins', 'ci_services'])
+        ->and($effective['ci_services'])->toBe([]);
 });
 
 // 4. Symlinks are refused at plan time
