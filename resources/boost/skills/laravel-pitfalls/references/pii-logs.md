@@ -38,6 +38,19 @@ An audit or event log is kept longer than anything else, sometimes years, and is
 
 Allowlist audit payloads to scalars that identify without describing: ids, codes, amounts, dates, kinds. When an audit must show that two events came from the same address or device, store a keyed hash (HMAC under a rotatable secret), never the raw value. When a data-subject request needs an answer, anonymise the person's rows rather than deleting records you are obliged to keep.
 
+### A content check on top of the allowlist
+
+A regex that looks for addresses or IPs in the payload (a content check) catches mistakes in the allowlist; it never replaces it.
+
+- A content check is a tripwire, never the guarantee: the allowlist by construction is the guarantee. Encodings slip past any regex (integer or hex IPs, `user%40example.com`, a full-width `@`).
+- The tripwire checks every field, ints included: an IP stored as an integer is still an IP.
+- Enumerate every string the object carries, name and emitter included, plus identifiers the caller composes (an event name, an outcome in an exception message), not only the context array.
+- False positives are tested: user agents and versions (`Chrome/120.0.0.0`, `vue@3.4.1`) and class names or `::` (`Foo::bar`, an IPv6-looking string) must pass, or the tripwire blocks legitimate events.
+- Every false-positive exemption has a paired must-still-be-caught case built from its own shape: an exemption for `word/1.2.3.4` versions is paired with `client/203.0.113.7`; an exemption for `name@3.4.1` is paired with `me@123.com`.
+- For the address half, require a dotted domain after `@` (`@` then labels with at least one dot), never just "a letter follows the `@`", which lets a digit-leading domain through.
+- Throw in development and testing, drop or redact in production: an audit call must never break the action that recorded it (a sign-in failing because its event held a user agent).
+- When a value is dropped, log only the position or key of the dropped field, never the value or a name that holds it.
+
 ## Pitfall 3: data with no expiry, and an off switch that deletes everything
 
 A table that collects personal data without an expiry is a defect, not housekeeping for later. The fix usually contains a second bug: the retention window is read and "made safe" with `max(1, $days)`, so a configured `0` meaning "keep forever" becomes a one-day window that deletes nearly the whole table on the next run.

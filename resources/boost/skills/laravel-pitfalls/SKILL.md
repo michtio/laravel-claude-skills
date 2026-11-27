@@ -21,6 +21,12 @@ Every reference opens with a gap line. `Gap: not covered by Boost` means Boost's
 | [Population: which rows ran](references/population.md) | A job, command or report runs without a request; an access list can be empty; a set must be complete; a list paginates or exports | Review only |
 | [PII in logs and retention](references/pii-logs.md) | A log call, audit payload or exception context carries user data; a table collects personal data; a retention window is read | `NoPayloadInLogRule` |
 | [Edge validation](references/edge-validation.md) | `env()` is read, cast or used outside config; a LIKE pattern is built from input; an id from the request is validated with `exists` | `NoUnescapedLikeRule`; Larastan `noEnvCallsOutsideOfConfig` for `env()`; the cast is review only |
+| [Single use, counters and throttles](references/single-use-and-counters.md) | A token, code or challenge may be used once; a counter must be exact; a throttle, a lock or a write-once key sits on a cache store; old rows are burned before a new one is inserted | Review only |
+| [Sign-in and sessions](references/sessions.md) | A `Login` listener, remember me, `password.confirm`, a session key a package writes, a per-route middleware that records state, a lookup by email, a secret derived from `APP_KEY`, laravel/passkeys | Review only |
+| [Queued payloads](references/queued-payloads.md) | A listener, job or notification is queued and carries a user, a secret or text in a locale | Review only |
+| [Environments](references/environments.md) | DDEV and CI run different engines, a suite moves from sqlite to MySQL, a suite or build uses Redis on DDEV | Review only |
+| [Package authoring](references/package-authoring.md) | You write a package: its `require`, provider, config checks, tagged services, a reach into a framework internal, a Testbench script, a Prunable model | Review only |
+| [Testing notes](references/testing.md) | Naming and grouping tests, a Testbench suite, a test that needs parallel processes, several devices or cookies in one test, time travel, `queue:work` in the suite | Review only |
 | [Docs claims](references/docs-claims.md) | A docblock, comment or README states a guarantee, lists what the code does, or says an integration is supported | Review only |
 
 ## Using the checks

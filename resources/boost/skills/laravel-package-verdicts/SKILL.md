@@ -34,6 +34,10 @@ Before proposing it, check and report:
 
 Then propose it and ask the developer for a ruling. A ruling worth keeping belongs in the project profile's `verdicts`, not in this register.
 
+## A package's own dependencies
+
+A package (a library other apps install) requires the `illuminate/*` components it uses (`illuminate/support`, `illuminate/database`, `illuminate/contracts`), never `laravel/framework` in `require`: the framework then comes from the app, and the package can be installed with whatever else the app runs. `laravel/framework` belongs in require-dev, or arrives through `orchestra/testbench`. The register's toolchain rows (Testbench, package tools, Larastan, Pest) cover the rest.
+
 ## Stale verdicts
 
 A `Checked` date older than six months is a hint, not a verdict: recheck Laravel support and maintenance before relying on it, and say that you did.

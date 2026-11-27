@@ -72,6 +72,7 @@ A removed or weakened isolation pin (`DB_DATABASE` with `force="true"`) on a sui
 - **Auth flows.** Challenge or nonce freshness and single use, replay, session stamp lifetime and binding, remember-me against a fresh login, session fixation, third-party events carrying the full user model, and what the code enforces against what the docs hand the consumer.
 - **Correctness.** Empty collections, soft-deleted rows, null relations, time zones, transaction boundaries and side effects inside them, the population a job or query runs over, N+1 queries at production volume, migrations on large existing tables, a `down()` that cannot run.
 - **Tests.** New branches with no test, a test that cannot fail, the weakening list above.
+- **Authorization tests.** Every restricted route or action has an authorization test in which a refused user gets 403 (or 404 where the app hides existence); a restricted route without one is an Important finding.
 - **Project files.** A diff that changes behavior a user or caller sees without updating the README, the docs and the CHANGELOG (where the project has them) is an Important finding.
 - **Test citations (R7).** A README never cites tests (a test name in it is a finding); a docblock or comment that claims behavior names its test.
 - **Conventions.** The project's guidelines and house style when they are on; docblocks that claim more than the code does.

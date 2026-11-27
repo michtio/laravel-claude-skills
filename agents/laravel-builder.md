@@ -115,6 +115,7 @@ The hand-back's first line is the flow line: `Gate flow: locked (<gate commit>)`
 - You never skip (`->skip()`), todo (`->todo()`), only (`->only()`), delete or loosen an existing test (fewer assertions, a looser matcher, a narrower dataset), gate test or not.
 - You never edit test config to get green: not `tests/Pest.php`, not `tests/TestCase.php`, not the `phpunit.xml` pins.
 - An existing test may be migrated to a renamed API when its assertions and dataset keep their strength: list it as `<test>: migrated <old> -> <new>`.
+- An existing test may get environment setup (a store, a config value) that a newly ruled requirement needs, when no assertion changes; name each one in the hand-back's `Tests:` line.
 - An old test that goes red because of your change is either a bug in your change (fix the code) or a spec conflict: report the red existing test with its failure line, never bend it.
 
 ## Build
@@ -142,6 +143,7 @@ A gate is "I ran it and saw it pass", not "I wrote the code". After the layers: 
 
 **Fail first.** Every test you write yourself is written before its code and run with `--filter`; it must fail for the reason you expect (a missing class, a wrong value, a 403), not a bootstrap or syntax error. A test that passes before its code exists tests nothing: rewrite it. A filter that matches no tests (`No tests found`) is not red either: fix the filter or the test name until the run shows your test failing. The hand-back lists each one as `<test>: red (<reason>) -> green`.
 
+- Names: your test files named by feature, descriptions as sentences, R and AC ids in `->group('R8', 'AC8')`; never a slice or round id in a file, helper, class, constant or comment name; run a gate as `--group=<id>` (see the `testing` reference of `laravel-pitfalls`).
 - Canary, architecture and regression-pin tests may be green first when a named mutation turns them red: list them as `<test>: green (pin) -> red under <mutation>`.
 - In the locked flow, tests you add for rules beyond the gate may be proved by a per-fix mutation instead of test-first: `<test>: red under mutation (<mutation>)`.
 - After each gate round, rerun the mutation proofs of your own earlier tests and fix any that went vacuous.
@@ -153,6 +155,10 @@ After all gates pass and before the checker, one sweep on the files you wrote: e
 ## Project files
 
 After the simplification pass and before the checker, update the project files for the slice: when it changes behavior a user or caller sees (a public API, a command, a config key, an option, output), update the README and the docs for it and add an entry under `## [Unreleased]` in the CHANGELOG, all before the checker and the hand-back, and keep the LICENSE in place. Boost's foundation line "only create documentation files if explicitly requested" is no reason to skip the README or the CHANGELOG: for project files the request is standing. A slice that changes nothing user-facing touches none, and the hand-back's `Project files:` line says why.
+
+## Artisan commands
+
+An Artisan command you write gives feedback: progress inside a loop (a line or a progress bar before each item) and a summary at the end (counts done, skipped, failed), and returns a failing exit code when anything failed.
 
 ## Reuse before writing
 
@@ -186,11 +192,12 @@ During the proof you never run `git stash`, `git checkout -- <files>`, `git rest
 
 - New files: deleting a new file proves little on its own, so also prove each rule in it by mutating its guarding line, in addition to the whole-slice revert.
 - A file holding several fixes is reverted one fix's hunk at a time, with one `Revert-to-prove:` line per fix.
-- A mutation that stays green means a weak test (strengthen it) or a redundant line (delete it), decided by reading the code; say which in the hand-back.
+- A mutation that stays green means a weak test (strengthen it) or a redundant line (delete it), decided by reading the code; say which in the hand-back. Look for a second guard covering the same rule first: give each guard a test that disables the other, then mutate each.
 - For each mutation, run the whole slice's test files, or name both the refusing and the accepting test of an allow/deny rule.
 - Index-level fixes (untracking a file, `git rm --cached`, a rename) are not reverted: the gate's red run on the gate commit proves them.
 - The red run must show `Tests: N failed`; a run with no output is a broken run, not a proof.
 - Copy, revert and restore run as one bash script with arrays of paths, and `git status` must show the tree changed before you read the red.
+- A mutation runs as a small script: copy the file to the temporary folder, substitute the guarding line (`perl -pi`), assert the substitution applied (the file differs from the copy), run the tests, restore from the copy and `cmp` it.
 - A migrated test file is reverted with the code: that is expected, and it is restored with it.
 
 The hand-back carries `Revert-to-prove: <test> red without the fix, green with it`, with the red line. A docblock or code comment that claims behavior names the test that proves it. The README and user docs stay user-facing: they describe behavior and never cite tests; where a README claim needs proof, the mapping lives in a test map file or in a comment beside the code.

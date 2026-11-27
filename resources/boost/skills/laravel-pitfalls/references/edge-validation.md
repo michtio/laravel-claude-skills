@@ -1,8 +1,8 @@
 # Edge validation: input the framework accepts and should not
 
-Gap: covered partly by Boost (laravel-best-practices, rules/config.blade.php: "Read environment variables in configuration files")
+Gap: covered partly by Boost (laravel-best-practices, rules/config.blade.php: "Read environment variables in configuration files"; enforced by Larastan's noEnvCallsOutsideOfConfig)
 
-Boost covers the rule that `env()` belongs in config files. It does not cover what happens to the value on the way in: a cast that turns a missing variable into zero, a LIKE pattern that treats the user's `%` as a wildcard, or a reference id that passes validation for a row the user may not touch. Each of these is input that Laravel and the database accept without complaint. This reference adds a check for the LIKE pattern, points to Larastan for `env()`, and gives review guidance for the cast.
+Boost covers the rule that `env()` belongs in config files. It does not cover what happens to the value on the way in: a cast that turns a missing variable into zero, a boolean that passes an integer check, a regex that accepts a trailing newline, an id string the database casts, a LIKE pattern that treats the user's `%` as a wildcard, or a reference id that passes validation for a row the user may not touch. Each of these is input that Laravel and the database accept without complaint. This reference adds a check for the LIKE pattern, points to Larastan for `env()`, and gives review guidance for the rest.
 
 ## Pitfall 1: env() outside config
 
@@ -19,6 +19,8 @@ Read the variable in a config file and use `config()` everywhere else:
 // application code
 $key = config('services.payments.key');
 ```
+
+- Third-party service settings (keys, endpoints, timeouts) go in `config/services.php` and are read through `config()` everywhere outside config files, never `env()`: one place lists every external service the app talks to.
 
 ## Pitfall 2: a cast on env() (review only)
 
@@ -50,6 +52,25 @@ $verify = config()->boolean('services.payments.verify_tls');
 
 For a variable that has no safe default, `Env::getOrFail('PAYMENTS_KEY')` in the config file throws when it is unset.
 
+## Also: a boolean that passes an integer check
+
+`env()` maps the string `true` to the boolean `true`, and `filter_var(true, FILTER_VALIDATE_INT)` returns 1, so `PAYMENTS_RETRIES=true` slips through an integer check as 1. Check `is_int($value)` or an `is_numeric` string first, then convert:
+
+```php
+$retries = env('PAYMENTS_RETRIES', 3);
+$retries = is_int($retries) || (is_string($retries) && is_numeric($retries))
+    ? filter_var($retries, FILTER_VALIDATE_INT, FILTER_NULL_ON_FAILURE)
+    : null;
+```
+
+## Also: a validator regex that accepts a trailing newline
+
+PCRE's `$` matches before a trailing newline, so `/^\d+$/` accepts `"8\n"`. In a validator regex use `\z` for the end of the string, or the `D` modifier (`/^\d+$/D`): a trailing newline then fails the match.
+
+## Also: a raw string id against an integer key
+
+`Model::query()->whereKey($request->input('id'))` with a raw string against a bigint key: Postgres throws a QueryException (a 500), MySQL casts `1abc` to 1 and finds the wrong row, and sqlite hides both. Normalize ids before querying (a positive int via `filter_var(..., FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]])`, or `ctype_digit` on the string) and refuse anything else as not found. Test with a UUID-shaped id against an integer key, and with `1abc`.
+
 ## Pitfall 3: an unescaped LIKE pattern
 
 ```php
@@ -69,6 +90,8 @@ User::query()->whereLike('email', '%'.$term.'%')->get();
 ```
 
 MySQL, MariaDB and PostgreSQL use backslash as the default LIKE escape character. SQLite has no default escape character, so on SQLite the escaped pattern needs an `ESCAPE '\'` clause (`whereRaw("email like ? escape '\\'", [$pattern])`). It also means a test run on SQLite does not prove the escaping works on the production engine.
+
+When the escape must be portable and an explicit `ESCAPE` clause is not an option, avoid LIKE: for a prefix match prefer streaming the candidates and matching with `str_starts_with` in PHP, or a range on the key (at least the prefix, and below the prefix with its last character incremented) on a column with a binary collation.
 
 ## Pitfall 4: a reference id that exists, but not for this user
 
