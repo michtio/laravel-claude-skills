@@ -7,6 +7,7 @@ namespace Michtio\LaravelClaudeSkills\Console;
 use Illuminate\Console\Command;
 use Michtio\LaravelClaudeSkills\Profile\Profile;
 use Michtio\LaravelClaudeSkills\Profile\ProfileException;
+use Michtio\LaravelClaudeSkills\Setup\Advisories;
 use Michtio\LaravelClaudeSkills\Setup\DdevDatabaseSource;
 use Michtio\LaravelClaudeSkills\Setup\FileChange;
 use Michtio\LaravelClaudeSkills\Setup\GitFiles;
@@ -60,6 +61,9 @@ use Symfony\Component\Process\Process;
  * shown last in the plan and run last, each once (a rerun runs only a new or
  * changed step). An invalid profile is refused before anything is planned.
  *
+ * Every run also prints the advisories (Advisories, PhpstanPlanner::shadowNotice())
+ * and the suggested `.claude/settings.json`, which it never writes.
+ *
  * Exit codes: 0 when done, declined or nothing to do; 1 with --check when
  * something would change, for an invalid profile, when a step or action fails,
  * and when the project is in a state it refuses to touch.
@@ -85,6 +89,7 @@ final class SetupCommand extends Command
         GitFiles::COMMIT_MSG,
         GitFiles::GITLEAKS_CHECK,
         GitFiles::GITLEAKS_CONFIG,
+        GitFiles::GITLEAKS_DOCKERFILE,
         TestbenchYamlPlanner::PATH,
         WorkflowPlanner::PATH,
         PhpstanPlanner::PATH,
@@ -184,6 +189,7 @@ final class SetupCommand extends Command
             }
 
             PathGuard::assertLinkInside($root, CreatedOnceFilePlanner::CLAUDE_MD);
+            PathGuard::assertLinkInside($root, CreatedOnceFilePlanner::BOOST_JSON);
             $plan = SetupPlan::build(
                 $project,
                 [...$this->planners($profile), $phpstan],
@@ -191,6 +197,7 @@ final class SetupCommand extends Command
                 $profile->steps(),
             );
             $phpstanNotice = $phpstan->notice($project);
+            $shadowNotice = $phpstan->shadowNotice($project);
         } catch (SetupException $exception) {
             $this->error($exception->getMessage());
 
@@ -205,6 +212,14 @@ final class SetupCommand extends Command
             $this->line($phpstanNotice);
         }
 
+        if ($shadowNotice !== null) {
+            $this->warn($shadowNotice);
+        }
+
+        foreach (Advisories::lines($project) as $advisory) {
+            $this->warn(OutputFormatter::escape($advisory));
+        }
+
         if (CreatedOnceFilePlanner::claudeMd()->creates($project) && file_exists($root.'/AGENTS.md')) {
             $this->warn('AGENTS.md exists but CLAUDE.md does not: the setup creates an empty CLAUDE.md, so Boost writes its guidelines there and Claude Code reads them. AGENTS.md is left alone.');
         }
@@ -216,6 +231,7 @@ final class SetupCommand extends Command
         }
 
         $this->showAgentsInstall($root);
+        $this->showSuggestedSettings($project);
 
         if ($plan->isEmpty()) {
             $this->info('No changes.');
@@ -339,6 +355,38 @@ final class SetupCommand extends Command
     }
 
     /**
+     * Print the Claude Code permissions suggested for the project's
+     * `.claude/settings.json`, on every run: the gate command as one exact rule
+     * (`Bash(composer test)`, `Bash(ddev composer test)` on DDEV), and the agents
+     * plugin. No wildcard rule: `ddev exec` runs its arguments through the
+     * container's `bash -c`, which expands `$(...)` even inside single quotes, and
+     * on the host `pest -c <file>` skips the pins and `pint *` can rewrite locked
+     * gate files. Printed text only: the setup never writes Claude Code's settings.
+     * Proven by tests/Profile/S9d1OutputTest.php ("prints suggested .claude/settings.json
+     * permissions", "never writes .claude/settings.json").
+     *
+     * @author michtio
+     */
+    private function showSuggestedSettings(Project $project): void
+    {
+        $settings = [
+            'permissions' => [
+                'allow' => ['Bash('.$project->composer().' test)'],
+            ],
+            'extraKnownMarketplaces' => [
+                'laravel-claude-skills' => ['source' => ['source' => 'github', 'repo' => self::MARKETPLACE]],
+            ],
+            'enabledPlugins' => [self::PLUGIN => true],
+        ];
+
+        $this->line('Suggested for .claude/settings.json (the setup never writes it; merge what you want):');
+
+        foreach (explode("\n", (string) json_encode($settings, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)) as $line) {
+            $this->line(OutputFormatter::escape($line));
+        }
+    }
+
+    /**
      * The planners, one per concern, in the order their changes are shown.
      *
      * @return list<Planner>
@@ -350,6 +398,7 @@ final class SetupCommand extends Command
         $testPins = is_array($options['test_pins']) ? array_map('strval', $options['test_pins']) : [];
         $planners = [
             CreatedOnceFilePlanner::claudeMd(),
+            CreatedOnceFilePlanner::boostJson(),
             new McpPlanner(),
             new RunnerGuidelinePlanner(),
             new CoreOverridePlanner(),
@@ -357,8 +406,9 @@ final class SetupCommand extends Command
             new ComposerScriptPlanner(),
             new DdevDatabasePlanner(),
             new StaticFilePlanner(GitFiles::COMMIT_MSG, GitFiles::commitMsg(), true),
-            new StaticFilePlanner(GitFiles::GITLEAKS_CHECK, GitFiles::gitleaksCheck(), true),
+            new StaticFilePlanner(GitFiles::GITLEAKS_CHECK, static fn (Project $project): string => GitFiles::gitleaksCheck($project->usesDdev()), true),
             new StaticFilePlanner(GitFiles::GITLEAKS_CONFIG, GitFiles::gitleaksConfig()),
+            new StaticFilePlanner(GitFiles::GITLEAKS_DOCKERFILE, GitFiles::gitleaksDockerfile(), false, static fn (Project $project): bool => $project->usesDdev()),
             new TestbenchYamlPlanner(),
         ];
 
@@ -519,7 +569,10 @@ final class SetupCommand extends Command
             return false;
         }
 
-        $count = count($written) + ($stateWritten ? 1 : 0) + $actionsRun + count($ran);
+        // Counted as the plan counts: the state file only when it is the one change
+        // (S9d1OutputTest "counts the same changes", S9bOutputTest "1 change planned.").
+        $count = count($written) + $actionsRun + count($ran);
+        $count = $count === 0 && $stateWritten ? 1 : $count;
         $this->info('Applied: '.($count === 1 ? '1 change' : $count.' changes').'.');
 
         return true;

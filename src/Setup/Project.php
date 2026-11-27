@@ -188,6 +188,24 @@ final class Project
     }
 
     /**
+     * The artisan command for code passed on the command line (`tinker --execute
+     * '...'`): `ddev exec` joins its arguments into one double-quoted `bash -c`
+     * string, so the container shell expands a `$` in the code; `ddev exec --raw --`
+     * passes the arguments as they are. `ddev artisan` is a DDEV custom command with
+     * `ExecRaw: true` and the host forms need nothing, so those stay as artisan() gives them.
+     * Proven by tests/Profile/S9d1RunnerTest.php ("gives a tinker form in the DDEV
+     * runner guideline that survives ddev exec", "carries no plain ddev exec tinker").
+     *
+     * @author michtio
+     */
+    public function rawArtisan(): string
+    {
+        $artisan = $this->artisan();
+
+        return str_starts_with($artisan, 'ddev exec ') ? 'ddev exec --raw -- '.substr($artisan, strlen('ddev exec ')) : $artisan;
+    }
+
+    /**
      * The Composer command for this runner.
      *
      * @author michtio

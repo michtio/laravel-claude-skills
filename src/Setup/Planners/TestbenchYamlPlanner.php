@@ -24,9 +24,17 @@ use Symfony\Component\Yaml\Yaml;
  * Owned: the `laravel` value and `env.APP_DEBUG`; other keys and env entries are
  * kept (an env list of KEY=value strings gets an `APP_DEBUG=true` item). A
  * `laravel` value other than absent, "@testbench" or "./" is a hand edit. The file
- * is rewritten through symfony/yaml (it comes with Boost's laravel/mcp and with
- * Testbench), so comments in it are not kept; the diff shows that before it is
- * applied.
+ * is edited as text: the top-level `laravel:` line is replaced whole, a trailing
+ * comment on it included (or added first),
+ * and `APP_DEBUG` is set in a block `env:` map or list (replaced in place, or
+ * appended after its last entry), or an `env:` block is appended. Every other
+ * line, comments and blank lines included, stays as it is. Only when the edited
+ * text does not parse to the owned values, or changes anything else the file
+ * parses to (a flow-style `env: {...}`, or a key the line edit would swallow, for
+ * example), is the file rewritten through symfony/yaml, without its comments; the
+ * diff shows that before it is applied. Proven by tests/Profile/S9d1RunnerTest.php
+ * ("keeps every line of testbench.yaml it does not own", "keeps a comment inside
+ * an env map") and tests/Profile/TestbenchYamlTextEditTest.php.
  *
  * @author michtio
  */
@@ -64,9 +72,13 @@ final class TestbenchYamlPlanner implements Planner
         if ($current !== null && $owned === $wanted) {
             $desired = $current;
         } else {
-            $data['laravel'] = './';
-            $data['env'] = $this->withDebug($data['env'] ?? null);
-            $desired = Yaml::dump($data, 4, 2, Yaml::DUMP_EMPTY_ARRAY_AS_SEQUENCE);
+            $desired = $this->editText($current ?? '', $wanted);
+
+            if ($desired === null) {
+                $data['laravel'] = './';
+                $data['env'] = $this->withDebug($data['env'] ?? null);
+                $desired = Yaml::dump($data, 4, 2, Yaml::DUMP_EMPTY_ARRAY_AS_SEQUENCE);
+            }
         }
 
         return new PlannedFile(
@@ -133,6 +145,133 @@ final class TestbenchYamlPlanner implements Planner
         }
 
         return ['laravel' => $data['laravel'] ?? null, 'APP_DEBUG' => $debug];
+    }
+
+    /**
+     * The file with the owned values set as text, or null when the edit cannot be
+     * made as text (the result does not parse to the owned values).
+     *
+     * @param array{laravel: string, APP_DEBUG: bool} $wanted
+     * @author michtio
+     */
+    private function editText(string $content, array $wanted): ?string
+    {
+        $eol = str_contains($content, "\r\n") ? "\r\n" : "\n";
+        $lines = $content === '' ? [] : (preg_split('/\R/', rtrim($content, "\r\n")) ?: []);
+        $laravel = null;
+        $env = null;
+
+        foreach ($lines as $index => $line) {
+            if (preg_match('/^laravel\s*:/', $line) === 1) {
+                $laravel ??= $index;
+            } elseif (preg_match('/^env\s*:\s*(#.*)?$/', $line) === 1) {
+                $env ??= $index;
+            } elseif (preg_match('/^env\s*:/', $line) === 1) {
+                return null;
+            }
+        }
+
+        if ($env === null) {
+            if ($lines !== [] && trim((string) end($lines)) !== '') {
+                $lines[] = '';
+            }
+
+            array_push($lines, 'env:', '  APP_DEBUG: true');
+        } else {
+            $lines = $this->withDebugLine($lines, $env);
+        }
+
+        if ($laravel === null) {
+            array_unshift($lines, 'laravel: ./');
+        } else {
+            $lines[$laravel] = 'laravel: ./';
+        }
+
+        $edited = implode($eol, $lines).$eol;
+
+        try {
+            $parsed = Yaml::parse($edited);
+            $original = $content === '' ? [] : Yaml::parse($content);
+        } catch (ParseException) {
+            return null;
+        }
+
+        // Everything but the owned values must parse exactly as before.
+        return is_array($parsed) && is_array($original) && $this->owned($parsed) === $wanted
+            && $this->unowned($parsed) === $this->unowned($original) ? $edited : null;
+    }
+
+    /**
+     * The parsed file without the owned values: `laravel`, and APP_DEBUG in `env`
+     * (an `env` that is missing, null or left empty by that is dropped, so an
+     * empty `env:` key compares equal to the map it becomes).
+     *
+     * @param array<mixed> $data
+     * @return array<mixed>
+     * @author michtio
+     */
+    private function unowned(array $data): array
+    {
+        unset($data['laravel']);
+        $env = $data['env'] ?? null;
+
+        if (is_array($env)) {
+            $env = array_is_list($env)
+                ? array_values(array_filter($env, static fn (mixed $item): bool => ! (is_string($item) && str_starts_with($item, 'APP_DEBUG='))))
+                : array_diff_key($env, ['APP_DEBUG' => true]);
+            $data['env'] = $env;
+        }
+
+        if (array_key_exists('env', $data) && ($env === null || $env === [])) {
+            unset($data['env']);
+        }
+
+        return $data;
+    }
+
+    /**
+     * The lines with APP_DEBUG set inside the block `env:` that starts at $env:
+     * replaced where it is, else appended after the block's last entry, in the
+     * block's own indentation and form (map or KEY=value list).
+     *
+     * @param list<string> $lines
+     * @return list<string>
+     * @author michtio
+     */
+    private function withDebugLine(array $lines, int $env): array
+    {
+        $last = $env;
+        $indent = '  ';
+        $list = false;
+
+        for ($index = $env + 1; $index < count($lines); $index++) {
+            $line = $lines[$index];
+
+            if (trim($line) === '' || preg_match('/^\s+#/', $line) === 1) {
+                continue;
+            }
+
+            if (preg_match('/^(\s+)(- )?/', $line, $match) !== 1) {
+                break;
+            }
+
+            if ($last === $env) {
+                $indent = $match[1];
+                $list = ($match[2] ?? '') !== '';
+            }
+
+            $last = $index;
+
+            if (preg_match('/^\s+(- \s*)?["\']?APP_DEBUG["\']?\s*[:=]/', $line) === 1) {
+                $lines[$index] = $list ? $indent.'- APP_DEBUG=true' : $indent.'APP_DEBUG: true';
+
+                return $lines;
+            }
+        }
+
+        array_splice($lines, $last + 1, 0, [$list ? $indent.'- APP_DEBUG=true' : $indent.'APP_DEBUG: true']);
+
+        return $lines;
     }
 
     /**

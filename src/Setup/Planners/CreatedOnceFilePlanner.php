@@ -11,7 +11,8 @@ use Michtio\LaravelClaudeSkills\Setup\Project;
 /**
  * A file the setup creates when it is missing and never touches once it exists,
  * whoever wrote it: `CLAUDE.md` (so Boost writes its guidelines there, not into
- * AGENTS.md) and a package's `tests/Pest.php` (so a fresh package has a suite).
+ * AGENTS.md), `boost.json` (so `boost:install -n` installs this pack's skills for
+ * Claude Code) and a package's `tests/Pest.php` (so a fresh package has a suite).
  *
  * The created file is shown in the plan like any other, but it is not recorded in
  * the state file: what Boost or the person writes into it later is never an edit
@@ -33,6 +34,11 @@ final class CreatedOnceFilePlanner implements Planner
      * The file Claude Code reads and Boost writes its guidelines into.
      */
     public const CLAUDE_MD = 'CLAUDE.md';
+
+    /**
+     * Boost's own config, seeded for a non-interactive boost:install.
+     */
+    public const BOOST_JSON = 'boost.json';
 
     // Public Methods
     // =========================================================================
@@ -104,6 +110,28 @@ final class CreatedOnceFilePlanner implements Planner
     }
 
     /**
+     * The planner for the boost.json seed Boost reads on a non-interactive
+     * `boost:install -n`: Claude Code as the agent, this pack among the
+     * third-party packages, the Laravel Cloud skill off. Created only when the
+     * project has no boost.json; an existing one is never touched. Proven by
+     * tests/Profile/S9d1OutputTest.php ("creates the boost.json seed", "never changes
+     * a boost.json that exists").
+     *
+     * @author michtio
+     */
+    public static function boostJson(): self
+    {
+        return new self(
+            self::BOOST_JSON,
+            json_encode(
+                ['agents' => ['claude_code'], 'packages' => ['michtio/laravel-claude-skills'], 'cloud' => false],
+                JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES,
+            )."\n",
+            static fn (Project $project): bool => true,
+        );
+    }
+
+    /**
      * The planner for an empty CLAUDE.md, for a project whose agents include Claude
      * Code: boost.json is missing, or its `agents` lists `claude_code` (or is not a list).
      *
@@ -138,15 +166,5 @@ final class CreatedOnceFilePlanner implements Planner
     public function creates(Project $project): bool
     {
         return ! file_exists($project->root.'/'.$this->path) && ! is_link($project->root.'/'.$this->path) && ($this->condition)($project);
-    }
-
-    /**
-     * The path this planner creates.
-     *
-     * @author michtio
-     */
-    public function path(): string
-    {
-        return $this->path;
     }
 }

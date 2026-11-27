@@ -98,6 +98,6 @@ Put `['order' => $order]` back in the log call, or clamp the window with `max(1,
 
 ## Check
 
-`NoPayloadInLogRule` (in `extension.neon`) reports a `Log::emergency()` to `Log::debug()` call whose message or context is an Eloquent model, `all()` or `input()` called with no arguments on a request (or `request()`), or a whole `Request`. It also reports those values placed directly in the context array. The message ends with `See laravel-pitfalls: pii-logs`. Its proof is `tests/PHPStan/Rules/NoPayloadInLogRuleTest.php`: each payload in the bad fixture is reported on its line, and ids, scalar fields and `input('key')` in the good fixture are not.
+`NoPayloadInLogRule` (in `extension.neon`) reports a `Log::emergency()` to `Log::debug()` call whose message or context is an Eloquent model, `all()` or `input()` called with no arguments on a request (or `request()`), or a whole `Request`. It also reports those values placed directly in the context array. The message ends with `See laravel-pitfalls: pii-logs`. Ids, scalar fields and `input('key')` are not reported.
 
 What it cannot see, and review has to: a payload passed through a variable, `$model->toArray()`, `Log::log()` and channel loggers, exception context, audit payloads, and retention. Those are review items.

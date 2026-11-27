@@ -1,0 +1,12 @@
+# The unused-public-code check of the pack's own CI (shipmonk/dead-code-detector,
+# https://github.com/shipmonk-rnd/dead-code-detector). Level 0 with Larastan, so only
+# dead code fails it; tests/ is not analysed (Pest closures call helpers through $this).
+# Public API a consumer calls and the pack does not is marked @api.
+includes:
+    - vendor/larastan/larastan/extension.neon
+    - vendor/shipmonk/dead-code-detector/rules.neon
+
+parameters:
+    level: 0
+    paths:
+        - src

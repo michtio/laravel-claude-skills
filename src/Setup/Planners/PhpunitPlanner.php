@@ -27,7 +27,8 @@ use Michtio\LaravelClaudeSkills\Setup\SetupException;
  *
  * Pins: APP_ENV=testing, CACHE_STORE=array, QUEUE_CONNECTION=sync,
  * MAIL_MAILER=array, SESSION_DRIVER=array, DB_URL="" (an empty URL cannot point
- * at the dev database), DB_CONNECTION and DB_DATABASE (in-memory sqlite for a
+ * at the dev database), BCRYPT_ROUNDS=4 (left alone when the file sets it
+ * unforced, as Laravel's skeleton does), DB_CONNECTION and DB_DATABASE (in-memory sqlite for a
  * package or an sqlite connection, else <slug>_test on the project's connection),
  * and every live-provider flag forced false. A forced-false live flag already in
  * the file stays owned when its key leaves .env, so a removed flag is neither
@@ -68,6 +69,15 @@ final class PhpunitPlanner implements Planner
         'SESSION_DRIVER' => 'array',
         'DB_URL' => '',
     ];
+
+    /**
+     * The bcrypt cost for tests, as Laravel's app skeleton pins it: every hash a
+     * test makes stays fast. Forced unless the file already sets it unforced; a forced
+     * value is owned like every pin. Proven by tests/Profile/S9d1OutputTest.php
+     * ("forces BCRYPT_ROUNDS=4") and tests/Setup/SetupIsolationRound2Test.php (the
+     * unforced stock line).
+     */
+    public const BCRYPT_ROUNDS = '4';
 
     /**
      * Pins also written as `<server>` elements. Laravel reads $_SERVER before $_ENV,
@@ -181,6 +191,13 @@ final class PhpunitPlanner implements Planner
             if (array_key_exists($name, $pins) && $value !== ProfileValidator::PIN_FROM_ENV) {
                 $pins[$name] = $value;
             }
+        }
+
+        // A stock unforced BCRYPT_ROUNDS (Laravel's app skeleton) stays the project's.
+        $bcrypt = $present['env:BCRYPT_ROUNDS'] ?? null;
+
+        if ($bcrypt === null || ($bcrypt[1] !== null && strtolower($bcrypt[1]) === 'true')) {
+            $pins['BCRYPT_ROUNDS'] = self::BCRYPT_ROUNDS;
         }
 
         if ($project->usesMemoryDatabase()) {

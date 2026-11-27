@@ -9,8 +9,8 @@ use Michtio\LaravelClaudeSkills\Setup\PlannedFile;
 use Michtio\LaravelClaudeSkills\Setup\Project;
 
 /**
- * A file the setup owns entirely, with fixed content (hook scripts, the gitleaks
- * config, the .gitignore files of a package skeleton), written only for the
+ * A file the setup owns entirely, with fixed or per-project content (hook
+ * scripts, the gitleaks config, the .gitignore files of a package skeleton), written only for the
  * projects the condition accepts.
  *
  * @author michtio
@@ -24,14 +24,14 @@ final class StaticFilePlanner implements Planner
      * Describe one owned file.
      *
      * @param string $path Path relative to the project root.
-     * @param string $content The file's content.
+     * @param string|(Closure(Project): string) $content The file's content, or a closure that gives it per project.
      * @param bool $executable Whether the file must carry the executable bits.
      * @param (Closure(Project): bool)|null $condition Which projects get the file; all when null.
      * @author michtio
      */
     public function __construct(
         private readonly string $path,
-        private readonly string $content,
+        private readonly string|Closure $content,
         private readonly bool $executable = false,
         private readonly ?Closure $condition = null,
     ) {
@@ -46,16 +46,8 @@ final class StaticFilePlanner implements Planner
     {
         $wanted = $this->condition === null || ($this->condition)($project);
 
-        return PlannedFile::whole($project->root, $this->path, $wanted ? $this->content : null, $this->executable);
-    }
+        $content = $this->content instanceof Closure ? ($this->content)($project) : $this->content;
 
-    /**
-     * The path this planner owns.
-     *
-     * @author michtio
-     */
-    public function path(): string
-    {
-        return $this->path;
+        return PlannedFile::whole($project->root, $this->path, $wanted ? $content : null, $this->executable);
     }
 }

@@ -20,7 +20,9 @@ use Michtio\LaravelClaudeSkills\Setup\SetupException;
  * The override is derived on every run from the core guideline of the Boost the
  * project has installed: only the command helpers (`$assist->artisanCommand()`
  * and its siblings) and any literal host artisan command are swapped for the
- * runner's form; every other line, condition and section of Boost's guidance is
+ * runner's form (tinker with code on the command line in the raw form,
+ * Project::rawArtisan(), so `ddev exec` does not expand a `$` in the code);
+ * every other line, condition and section of Boost's guidance is
  * kept as Boost ships it. A Blade comment records the Boost version and the
  * source's hash. When Boost's core guideline changes, the derived content changes,
  * the plan shows the refresh as a normal diff (no hand-edit warning, since the
@@ -122,12 +124,17 @@ final class CoreOverridePlanner implements Planner
         ];
         $content = (string) preg_replace_callback(
             '/\{\{\s*\$assist->(artisanCommand|composerCommand|nodePackageManagerCommand|binCommand)\((?:\'([^\'\\\\]*)\'|"((?:[^"\\\\$]|\\\\")*)")\)\s*\}\}/',
-            static function (array $match) use ($helpers): string {
+            static function (array $match) use ($helpers, $project): string {
                 $argument = ($match[3] ?? '') !== '' ? str_replace('\\"', '"', $match[3]) : ($match[2] ?? '');
 
                 // Text Blade would read as an echo or a directive stays an expression (handled below).
                 if (str_contains($argument, '{{') || str_contains($argument, '{!!') || str_contains($argument, '@')) {
                     return $match[0];
+                }
+
+                // Code on the command line needs the raw form, or `ddev exec` expands its `$`.
+                if ($match[1] === 'artisanCommand' && str_starts_with($argument, 'tinker')) {
+                    return $project->rawArtisan().' '.$argument;
                 }
 
                 return $helpers[$match[1]].$argument;
@@ -188,7 +195,7 @@ final class CoreOverridePlanner implements Planner
 
         // Remove the runner forms first; what is left must hold no host command.
         $text = str_replace(
-            array_unique([$project->artisan(), $project->composer().' ', $project->npm().' ', $project->vendorBin(), 'ddev npx ', 'ddev exec php ']),
+            array_unique([$project->rawArtisan(), $project->artisan(), $project->composer().' ', $project->npm().' ', $project->vendorBin(), 'ddev npx ', 'ddev exec php ']),
             ' ',
             $body,
         );
