@@ -14,7 +14,9 @@ use stdClass;
  * Sets composer.json `scripts.test` to the one gate command: `composer test` runs
  * the same steps locally and in CI.
  *
- * Steps, each only when its package is required: `pint --test` (laravel/pint),
+ * Steps: for an app first `@php artisan config:clear --ansi` (a cached config
+ * would override the forced test pins); then, each only when its package is
+ * required, `pint --test` (laravel/pint),
  * `phpstan analyse --no-progress` (phpstan/phpstan or larastan/larastan), `pest`
  * (pestphp/pest; otherwise `@php artisan test` for an app or
  * `@php vendor/bin/testbench package:test` for a package), and always last
@@ -86,7 +88,8 @@ final class ComposerScriptPlanner implements Planner
      */
     public function steps(Project $project): array
     {
-        $steps = [];
+        // A cached config would make PHPUnit's forced pins useless, so an app clears it first.
+        $steps = $project->isPackage() ? [] : ['@php artisan config:clear --ansi'];
 
         if ($project->requires('laravel/pint')) {
             $steps[] = 'pint --test';
