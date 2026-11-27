@@ -41,6 +41,7 @@ final class Profile
      * @param array<string, array<string, mixed>> $verdicts The profile's own verdicts, as written.
      * @param list<string> $unknownLaravelKeys Keys under `laravel` that are not options.
      * @param list<string> $explicit The options the profile sets itself.
+     * @param list<string> $ciServices The extra CI services of `laravel.ci_services`.
      * @author michtio
      */
     private function __construct(
@@ -50,6 +51,7 @@ final class Profile
         private readonly array $verdicts,
         private readonly array $unknownLaravelKeys,
         private readonly array $explicit = [],
+        private readonly array $ciServices = [],
     ) {
     }
 
@@ -93,6 +95,7 @@ final class Profile
             self::readVerdicts($decoded),
             ProfileValidator::unknownLaravelKeys($decoded),
             self::explicitOptions($decoded),
+            self::readCiServices($decoded),
         );
     }
 
@@ -174,6 +177,29 @@ final class Profile
     }
 
     /**
+     * The extra service containers of `laravel.ci_services`, in profile order; empty
+     * when the profile sets none. Kept out of effective(), whose keys earlier slices
+     * pinned; proven by tests/Profile/CiServicesTest.php.
+     *
+     * @return list<string>
+     * @author michtio
+     */
+    public function ciServices(): array
+    {
+        return $this->ciServices;
+    }
+
+    /**
+     * Whether the profile sets `laravel.ci_services` itself.
+     *
+     * @author michtio
+     */
+    public function setsCiServices(): bool
+    {
+        return in_array('ci_services', $this->explicit, true);
+    }
+
+    /**
      * Keys under `laravel` that are not options (kept and ignored).
      *
      * @return list<string>
@@ -231,9 +257,24 @@ final class Profile
         }
 
         return array_values(array_filter(
-            [...array_keys(ProfileValidator::LARAVEL_DEFAULTS), ...array_keys(ProfileValidator::OPTIONAL_DEFAULTS)],
+            [...array_keys(ProfileValidator::LARAVEL_DEFAULTS), ...array_keys(ProfileValidator::OPTIONAL_DEFAULTS), 'ci_services'],
             static fn (string $key): bool => property_exists($profile->laravel, $key),
         ));
+    }
+
+    /**
+     * The validated `laravel.ci_services` list, or an empty list when it is not set.
+     *
+     * @return list<string>
+     * @author michtio
+     */
+    private static function readCiServices(stdClass $profile): array
+    {
+        if (! property_exists($profile, 'laravel') || ! $profile->laravel instanceof stdClass || ! property_exists($profile->laravel, 'ci_services')) {
+            return [];
+        }
+
+        return is_array($profile->laravel->ci_services) ? array_values(array_map('strval', $profile->laravel->ci_services)) : [];
     }
 
     /**

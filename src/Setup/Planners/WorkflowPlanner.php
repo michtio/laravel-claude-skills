@@ -29,6 +29,10 @@ use Symfony\Component\Process\Process;
  *   package on the DDEV test database), a
  *   service container with the test database the PHPUnit pins name (the image of
  *   the DDEV database when `.ddev/config.yaml` exists, else the connection's);
+ * - extra services: each name in the profile's `laravel.ci_services` adds a
+ *   service container beside the database one, with its host and port in the job's
+ *   env (`redis`: the redis image, REDIS_HOST and REDIS_PORT), proven by
+ *   tests/Profile/CiServicesTest.php;
  * - gitleaks: installed from its release, checksum verified, because the secret
  *   scan step of `composer test` fails in CI without it.
  *
@@ -81,18 +85,28 @@ final class WorkflowPlanner implements Planner
         'postgres' => ['postgres', '17', 5432, 'postgres', 'postgres'],
     ];
 
+    /**
+     * Extra service containers: name => [image, port, health command, host env key, port env key].
+     * The redis tag is its latest major on Docker Hub, checked 2026-11-28.
+     */
+    private const SERVICES = [
+        'redis' => ['redis:8-alpine', 6379, 'redis-cli ping', 'REDIS_HOST', 'REDIS_PORT'],
+    ];
+
     // Public Methods
     // =========================================================================
 
     /**
-     * Take the profile's `laravel.ci` and `laravel.php_matrix` options.
+     * Take the profile's `laravel.ci`, `laravel.php_matrix` and `laravel.ci_services` options.
      *
      * @param string|list<string> $phpMatrix `auto`, or the PHP versions to test on.
+     * @param list<string> $services The extra service containers, names from SERVICES.
      * @author michtio
      */
     public function __construct(
         private readonly bool $ci,
         private readonly string|array $phpMatrix = 'auto',
+        private readonly array $services = [],
     ) {
     }
 
@@ -150,10 +164,16 @@ final class WorkflowPlanner implements Planner
             }
         }
 
+        $services = $this->services;
+        $env = [];
+
+        if ($database !== null || $services !== []) {
+            $lines[] = '    services:';
+        }
+
         if ($database !== null) {
             [$image, $port, $user, $password, $name] = $database;
             $kind = explode(':', $image)[0];
-            $lines[] = '    services:';
             $lines[] = '      database:';
             $lines[] = '        image: '.$image;
             $lines[] = '        env:';
@@ -180,11 +200,33 @@ final class WorkflowPlanner implements Planner
             $lines[] = '          --health-interval=5s';
             $lines[] = '          --health-timeout=5s';
             $lines[] = '          --health-retries=20';
+            $env = ['DB_HOST' => '127.0.0.1', 'DB_PORT' => (string) $port, 'DB_USERNAME' => $user, 'DB_PASSWORD' => $password];
+        }
+
+        foreach ($services as $service) {
+            [$image, $port, $health, $hostKey, $portKey] = self::SERVICES[$service];
+            array_push(
+                $lines,
+                '      '.$service.':',
+                '        image: '.$image,
+                '        ports:',
+                '          - '.$port.':'.$port,
+                '        options: >-',
+                '          --health-cmd="'.$health.'"',
+                '          --health-interval=5s',
+                '          --health-timeout=5s',
+                '          --health-retries=20',
+            );
+            $env[$hostKey] = '127.0.0.1';
+            $env[$portKey] = (string) $port;
+        }
+
+        if ($env !== []) {
             $lines[] = '    env:';
-            $lines[] = '      DB_HOST: 127.0.0.1';
-            $lines[] = '      DB_PORT: '.$port;
-            $lines[] = '      DB_USERNAME: '.$user;
-            $lines[] = '      DB_PASSWORD: '.$password;
+
+            foreach ($env as $key => $value) {
+                $lines[] = '      '.$key.': '.$value;
+            }
         }
 
         array_push(

@@ -16,8 +16,8 @@ use stdClass;
  * `locked` or `builder-written`; `builders` and `setup.steps` are lists of objects
  * with string `name` and `command`. The schema leaves `laravel` and `verdicts` as
  * open objects, so their entries are checked here: the Laravel options (the five
- * of LARAVEL_DEFAULTS and the three of OPTIONAL_DEFAULTS) and the fields of each
- * verdict.
+ * of LARAVEL_DEFAULTS, the three of OPTIONAL_DEFAULTS and `ci_services`) and the
+ * fields of each verdict.
  *
  * Unknown keys are allowed at every level (the schema's "unknown keys are kept and
  * ignored"); unknownLaravelKeys() lists the ones under `laravel` so the setup can
@@ -53,6 +53,14 @@ final class ProfileValidator
         'php_matrix' => 'auto',
         'test_pins' => [],
     ];
+
+    /**
+     * The services `laravel.ci_services` may name (extra service containers for the
+     * CI workflow's gate job; read by Profile::ciServices(), outside effective(), and
+     * empty means none): the ones the workflow has an image for. Refusing any other
+     * name is proven by tests/Profile/CiServicesValidationTest.php.
+     */
+    public const CI_SERVICES = ['redis'];
 
     /**
      * Allowed values of `laravel.test_database`.
@@ -154,7 +162,8 @@ final class ProfileValidator
     }
 
     /**
-     * The keys under `laravel` that are not one of the eight options, in file order.
+     * The keys under `laravel` that are not one of the nine options (the eight
+     * defaults and `ci_services`), in file order.
      *
      * @return list<string>
      * @author michtio
@@ -167,7 +176,7 @@ final class ProfileValidator
 
         return array_values(array_filter(
             array_map('strval', array_keys(get_object_vars($profile->laravel))),
-            static fn (string $key): bool => ! array_key_exists($key, self::LARAVEL_DEFAULTS) && ! array_key_exists($key, self::OPTIONAL_DEFAULTS),
+            static fn (string $key): bool => ! array_key_exists($key, self::LARAVEL_DEFAULTS) && ! array_key_exists($key, self::OPTIONAL_DEFAULTS) && $key !== 'ci_services',
         ));
     }
 
@@ -398,6 +407,38 @@ final class ProfileValidator
 
         if (property_exists($laravel, 'test_pins')) {
             self::testPins($laravel->test_pins);
+        }
+
+        if (property_exists($laravel, 'ci_services')) {
+            self::ciServices($laravel->ci_services);
+        }
+    }
+
+    /**
+     * Check `laravel.ci_services`: a list of unique names from CI_SERVICES (an empty
+     * list means none). Proven by tests/Profile/CiServicesValidationTest.php.
+     *
+     * @throws ProfileException On the first invalid value.
+     * @author michtio
+     */
+    private static function ciServices(mixed $services): void
+    {
+        if (! is_array($services) || ! array_is_list($services)) {
+            throw ProfileException::field('laravel.ci_services', 'must be a list of service names: '.implode(', ', self::CI_SERVICES));
+        }
+
+        $seen = [];
+
+        foreach ($services as $index => $service) {
+            if (! is_string($service) || ! in_array($service, self::CI_SERVICES, true)) {
+                throw ProfileException::field('laravel.ci_services.'.$index, 'must be one of '.implode(', ', self::CI_SERVICES));
+            }
+
+            if (in_array($service, $seen, true)) {
+                throw ProfileException::field('laravel.ci_services.'.$index, 'lists '.$service.' twice');
+            }
+
+            $seen[] = $service;
         }
     }
 

@@ -297,6 +297,11 @@ final class SetupCommand extends Command
             $this->line(OutputFormatter::escape('  '.$key.': '.$this->optionValue($key, $value).' ('.$source.')'));
         }
 
+        if ($profile->setsCiServices()) {
+            $services = $profile->ciServices();
+            $this->line(OutputFormatter::escape('  ci_services: '.($services === [] ? 'none' : implode(', ', $services)).' (profile)'));
+        }
+
         foreach ($profile->unknownLaravelKeys() as $key) {
             $this->warn(OutputFormatter::escape('Ignoring unknown profile key: laravel.'.$key));
         }
@@ -417,7 +422,11 @@ final class SetupCommand extends Command
         }
 
         $planners[] = CreatedOnceFilePlanner::pest();
-        $planners[] = new WorkflowPlanner($options['ci'] === true, is_array($options['php_matrix']) ? array_values(array_map('strval', $options['php_matrix'])) : 'auto');
+        $planners[] = new WorkflowPlanner(
+            $options['ci'] === true,
+            is_array($options['php_matrix']) ? array_values(array_map('strval', $options['php_matrix'])) : 'auto',
+            $profile->ciServices(),
+        );
 
         return $planners;
     }

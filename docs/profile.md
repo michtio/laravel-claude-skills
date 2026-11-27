@@ -102,6 +102,7 @@ Each option has a default; a value in the profile takes precedence over the defa
 | `test_database` | `auto`, `ddev` | `auto` | `ddev` gives a Testbench package on DDEV the test database an app on DDEV gets (see Test database below); for an app it changes nothing. `auto` keeps a package on in-memory sqlite. |
 | `php_matrix` | `auto`, or a list of `"X.Y"` strings | `auto` | The PHP versions the CI workflow tests on (see CI workflow below). |
 | `test_pins` | an object of pin name to value or `env` | `none` | Overrides single PHPUnit pins (see Test pins below). Isolation stays the default: every pin the profile does not name stays forced. |
+| `ci_services` | a list of service names: `redis` | `none` | Extra service containers for the CI workflow's gate job, beside the database (see CI workflow below). |
 
 An empty list, `"laravel": []` (what PHP's `json_encode` writes for an empty map), counts as no options set. Booleans must be JSON booleans and `phpstan_level` a JSON integer: `"false"`, `0`, `null` or `"8"` are refused.
 
@@ -226,6 +227,8 @@ With `"laravel": {"ci": true}` the setup writes `.github/workflows/claude-skills
 
 It also installs gitleaks (checksum verified), which the secret scan of `composer test` needs in CI, and, for a suite that runs on MySQL, MariaDB or PostgreSQL (an application, or a package with `"test_database": "ddev"`), starts a database service with the test database.
 
+Extra services follow `ci_services`: `"ci_services": ["redis"]` starts a Redis service (the `redis` image) in the gate job and sets `REDIS_HOST` and `REDIS_PORT` in its env, so a suite that needs Redis runs in CI without a hand edit of the workflow. Any other name is refused. Changing the list plans only the workflow.
+
 The PHP versions follow `php_matrix`. A list runs the job once per version, as a matrix (`fail-fast: false`). With `auto`, the default, a package is tested on every PHP minor from the composer.json require.php floor (its lowest X.Y version) up to the latest the setup knows; the DDEV PHP version does not decide it. With `auto`, an application runs one version, the first of: `php_version` in `.ddev/config.yaml` (and its `config.*.yaml` overrides), `config.platform.php` in `composer.json`, the lowest version `require.php` allows, else 8.4, each reduced to X.Y. Changing the matrix plans only the workflow.
 
 The setup owns the file like every file it writes: the plan shows it as a diff, a copy you changed is reported as `edited by hand: .github/workflows/claude-skills-gate.yml` and is only replaced after you confirm.
@@ -241,7 +244,7 @@ The setup owns the file like every file it writes: the plan shows it as a diff, 
 
 The profile is meant to be updated by a tool and the setup rerun to keep a repository current. A rerun applies only the difference:
 
-- Changing one option plans only what follows from it: `ci` and `php_matrix` plan only the workflow; `phpstan_level` plans only `phpstan.neon`; `test_pins` plans only the PHPUnit file; `test_database` plans the hook, the PHPUnit file and the workflow; `runner` plans only the runner-dependent files; `house_style` and `gate_tests` plan nothing.
+- Changing one option plans only what follows from it: `ci`, `php_matrix` and `ci_services` plan only the workflow; `phpstan_level` plans only `phpstan.neon`; `test_pins` plans only the PHPUnit file; `test_database` plans the hook, the PHPUnit file and the workflow; `runner` plans only the runner-dependent files; `house_style` and `gate_tests` plan nothing.
 - Rewriting the profile with the same meaning (keys reordered, other formatting, `managed_by` added) plans nothing.
 - A rerun on an unchanged project reports `No changes` and `claude-skills:setup --check` exits 0.
 
