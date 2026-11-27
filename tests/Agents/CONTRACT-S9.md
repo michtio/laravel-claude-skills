@@ -157,3 +157,47 @@ The fixtures' stand-in `vendor/bin/pest`, `vendor/bin/phpstan` and `vendor/bin/p
 - G9 and G10 are pending in the reference itself.
 - The outside-builder path (AC26, AC28) is slice S10.
 - The release runner, the facts check and the benchmark are S11.
+
+## 7. Round 2 (`tests/gate/test_s9_round2.py`)
+
+Found when the reviewer ran on a real PR. Each statement is behaviour a real agent must follow; the tests check that the agent's text carries it. What a model does with the text is S11's job. Also fixed here: `tests/gate/test_s9.py` now puts its own folder on `sys.path`, so `python3 -m unittest tests.gate.test_s9` works from the repo root (an authorised gate amendment).
+
+### 7.1 Several gate commits (reviewer, deep reviewer, builder, debugger), blocker
+
+A slice can have several gate commits (`test(gate): AK-S1`, `test(gate): AK-S1 round 2`). The agent text says so, and:
+- the gate files are the union of every `test(gate):` commit in `<base>..HEAD` whose message names the slice, or of the gate commits the brief (or caller) names;
+- commits the brief names win: a forged or late `test(gate):` commit must not redefine the gate;
+- each gate commit is lock-checked, in both forms (`git diff --quiet <gate commit> -- <gate files>` and `git diff --quiet <gate commit> HEAD -- <gate files>`);
+- paths are literal: `:(literal)` pathspecs, or a per-path existence check in the gate commit (a path that exists nowhere compares clean, exit 0);
+- exit 128 (a bad revision or pathspec) is an error to report, never a pass.
+
+The builder's text drops the single-gate-commit assumption in the same way (its supplied-commit flow too).
+
+### 7.2 Reviewers
+
+- Untracked files: `git status --porcelain -uall` (a bare `--porcelain` hides files inside untracked directories); the deep reviewer's line counts include untracked files.
+- PR or ref-range mode: when the brief names a PR or a ref range, diff `git diff <base> <head>` and ignore working-tree state (or ask); find the default branch with `gh pr view --json baseRefName`, or ask; never guess it.
+- Reruns: only `vendor/bin/pest` or `ddev exec vendor/bin/pest`, with `--filter`; anything else is reported `claimed, not rerun (command not a filtered pest run)`. With no named command, the plan's slice gate or the CI step supplies it. A rerun while the lock check exit is 1 is labelled as running weakened tests.
+- G8: a read-only reviewer reasons from the test and the changed lines, or raises a `Verify:` Suggestion that gives the exact revert command for a person to run.
+- Bash forbid lists add `git restore`, `git clean`, `git apply`, `git rebase`, `git merge`, `git pull` and `git diff --output=`.
+
+### 7.3 Deep reviewer
+
+- Static checks: an error in an unchanged file that references a changed symbol is kept, or flagged `unverifiable: review by hand`; an old error is never dropped without a baseline.
+- Every lens brief gets the Sensitive paths and Evidence rules pasted in.
+- Deterministic findings (lock check, avoid package, check-backed) cannot be refuted by the challenger.
+- With zero Critical or Important findings no challenger runs and the report line is `Challenge: none (no Critical or Important findings)`.
+- Agent starts are limited by instruction (the checker type only, at most 5), and a retry counts against the cap.
+- The mode lines carry the static-check summary and the left-out counts: `Mode: single pass (<reason>) · static checks: <summary, n left out>`; the team line likewise.
+
+### 7.4 Debugger
+
+- `git bisect` only with the caller's go, plus a restore to the original ref; otherwise only `git log -p`, `git blame` and `git show`.
+- Gate files are identified as in 7.1.
+- The regression test goes in a new file, never in a gate file.
+- A hypothesis cycle with no surviving hypothesis counts as a round under the 3-round cap.
+- `migrate` or any write to the dev database needs the caller's go.
+
+### 7.5 Budget script
+
+The exemption is the exact name `laravel-reviewer-deep`, not a suffix. Fixture `evals/fixtures/agent-other-reviewer-deep` (`acme-reviewer-deep`, inherits Agent, has a cap line) must fail with `must disallow Agent`; the orchestrator fixture still passes.

@@ -30,7 +30,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import test_s8 as s8
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # so `python3 -m unittest tests.gate.test_s9` works from the repo root
+
+import test_s8 as s8  # noqa: E402
 
 REPO = s8.REPO
 AGENTS = s8.AGENTS
