@@ -1,0 +1,15 @@
+{
+  "name": "laravel-claude-skills",
+  "description": "Agents for Laravel projects with independent gates, on top of Laravel Boost. Skills ship through Boost (composer package michtio/laravel-claude-skills), not through this plugin.",
+  "version": "0.0.0",
+  "homepage": "https://github.com/michtio/laravel-claude-skills",
+  "repository": "https://github.com/michtio/laravel-claude-skills",
+  "license": "MIT",
+  "author": {
+    "name": "michtio"
+  },
+  "keywords": ["laravel", "boost", "agents", "review"],
+  "agents": [
+    "./agents/laravel-review-checker.md"
+  ]
+}
