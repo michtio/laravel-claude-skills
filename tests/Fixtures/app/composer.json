@@ -1,0 +1,9 @@
+{
+    "name": "example/app",
+    "type": "project",
+    "require": {
+        "php": "^8.3",
+        "laravel/framework": "^13.0",
+        "laravel/boost": "^2.5"
+    }
+}

@@ -1,0 +1,16 @@
+{
+    "name": "example/package",
+    "type": "library",
+    "require": {
+        "php": "^8.3"
+    },
+    "require-dev": {
+        "laravel/boost": "^2.5",
+        "orchestra/testbench": "^11.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Example\\Package\\": "src/"
+        }
+    }
+}
