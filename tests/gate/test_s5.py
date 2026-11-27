@@ -139,6 +139,7 @@ class FixtureAppIntegration(unittest.TestCase):
                                cwd=REPO, capture_output=True, text=True)
             if r.returncode != 0:
                 raise RuntimeError("make-fixture-app.sh failed: " + (r.stdout + r.stderr)[-2000:])
+        subprocess.run(["ddev", "config", "--project-name=lcs-fixture-app"], cwd=APP, capture_output=True, text=True)  # keep the project registered
         subprocess.run(["ddev", "start"], cwd=APP, capture_output=True, text=True)
         cls.profile = APP / ".ai/skills-profile.json"
 

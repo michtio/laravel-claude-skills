@@ -131,7 +131,7 @@ it('leaves commented-out env elements byte-identical and pins the real ones (com
     }
     isoPinned(isoEnv($out), 'DB_DATABASE', 'app_test');
     isoPinned(isoEnv($out), 'DB_CONNECTION', 'mysql');
-    foreach (ISO_COMMENTS as $comment) {
+    foreach (ISO2_COMMENTS as $comment) {
         expect($out)->toContain($comment);
     }
     expect(iso2EnvCounts($out)['DB_DATABASE'])->toBe(1)->and(iso2EnvCounts($out)['APP_ENV'])->toBe(1);

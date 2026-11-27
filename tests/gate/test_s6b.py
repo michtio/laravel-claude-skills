@@ -52,6 +52,15 @@ def ddev(args: list[str], cwd: Path = REPO) -> subprocess.CompletedProcess:
     return subprocess.run(["ddev", *args], cwd=cwd, capture_output=True, text=True)
 
 
+def ensure_registered(app: Path) -> None:
+    """Keep the fixture app's DDEV project registered (idempotent, config.yaml unchanged).
+
+    `ddev delete -Oy` unregisters a project, and a plain `ddev start` in its directory then
+    falls back to the enclosing repository's own project.
+    """
+    subprocess.run(["ddev", "config", "--project-name=lcs-fixture-app"], cwd=app, capture_output=True, text=True)
+
+
 @unittest.skipUnless(shutil.which("ddev"), "needs ddev: the suite runs inside the fixture app's DDEV project, never on the host")
 class AppIsolationInDdev(unittest.TestCase):
     @classmethod
@@ -64,6 +73,7 @@ class AppIsolationInDdev(unittest.TestCase):
         r = subprocess.run(["bash", str(REPO / "scripts/make-fixture-app.sh"), "--force"], cwd=REPO, capture_output=True, text=True)
         if r.returncode != 0:
             raise RuntimeError("make-fixture-app.sh --force failed: " + (r.stdout + r.stderr)[-2000:])
+        ensure_registered(APP)
         ddev(["start"], APP)
         cls.saved: dict[str, bytes | None] = {}
         for rel in TOUCHED:
@@ -168,6 +178,7 @@ class AppIsolationOnPostgresInDdev(unittest.TestCase):
             else:
                 cls.saved[rel] = b""  # absent
         cls.dbname = slug(json.loads((APP / "composer.json").read_text())["name"])
+        ensure_registered(APP)
         ddev(["delete", "-Oy"], APP)  # DDEV cannot switch the database type of a project that has data
         r = ddev(["config", "--database=postgres:16"], APP)
         if r.returncode != 0:
@@ -191,6 +202,7 @@ class AppIsolationOnPostgresInDdev(unittest.TestCase):
                 shutil.rmtree(saved_dir)
             elif content:
                 p.write_bytes(content)
+        ensure_registered(APP)  # `ddev delete -Oy` unregistered the project; the other classes start it
 
     def sh(self, command: str, expect: int | None = 0) -> subprocess.CompletedProcess:
         r = subprocess.run(["ddev", "exec", "bash", "-c", command], cwd=APP, capture_output=True, text=True)
