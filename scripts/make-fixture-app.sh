@@ -3,8 +3,8 @@
 # (PHP 8.4), requiring this package through a Composer path repository (../..,
 # symlinked). tests/gate/fixture-app.sh runs against it.
 #
-#   bash bin/make-fixture-app.sh           # create (refuses when fixtures/app exists)
-#   bash bin/make-fixture-app.sh --force   # stop and delete the old DDEV project first
+#   bash scripts/make-fixture-app.sh           # create (refuses when fixtures/app exists)
+#   bash scripts/make-fixture-app.sh --force   # stop and delete the old DDEV project first
 #
 # Everything PHP runs inside DDEV; nothing runs php or composer on the host.
 # fixtures/app/ is git-ignored: the app is generated, never committed.

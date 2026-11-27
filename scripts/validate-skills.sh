@@ -8,8 +8,8 @@
 # Craft-only version-script checks are dropped; skills live where Boost reads
 # them, resources/boost/skills/<name>/SKILL.md.
 #
-#   bash bin/validate-skills.sh               # this package
-#   bash bin/validate-skills.sh --root DIR    # another tree (self-tests)
+#   bash scripts/validate-skills.sh               # this package
+#   bash scripts/validate-skills.sh --root DIR    # another tree (self-tests)
 #
 # Checks, per skill:
 #   - frontmatter parses as strict YAML

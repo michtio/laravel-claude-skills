@@ -20,7 +20,7 @@ jobs:
           python-version: "3.12"
 
       - name: Deterministic checks
-        run: sh bin/check.sh
+        run: sh scripts/check.sh
 
       - name: Gate unit tests
         run: python3 -m unittest discover -s tests/gate

@@ -17,14 +17,15 @@ Rules (tests/gate/CONTRACT.md section 1):
   - an agent with Agent declares `At most N agents per <run|review>`, N <= 5;
   - a `*-checker` or `*-gate-writer` agent never has Agent;
   - a read-only agent (name contains planner, reviewer, checker or gate-writer)
-    disallows mcp__laravel-boost__tinker in `disallowedTools:`;
+    disallows mcp__laravel-boost__tinker and mcp__laravel-boost__record-rule
+    (it writes .ai/rules) in `disallowedTools:`;
   - a planner, reviewer or checker also disallows Write, Edit and NotebookEdit
     (the gate writer writes tests, so it is exempt from that one);
   - reviewer and checker agents never use effort: xhigh.
 
 Usage:
-    python3 bin/agent_budget.py              # table; exit 1 on any violation
-    python3 bin/agent_budget.py --root DIR   # check another tree (self-tests)
+    python3 scripts/agent_budget.py              # table; exit 1 on any violation
+    python3 scripts/agent_budget.py --root DIR   # check another tree (self-tests)
 
 Python 3.9+, standard library only.
 """
@@ -41,6 +42,7 @@ CHECKER_BUDGET = 16 * 1024
 MAX_AGENTS = 5
 CAP_LINE = re.compile(r"At most (\d+) agents per (?:run|review)\b")
 TINKER = "mcp__laravel-boost__tinker"
+RECORD_RULE = "mcp__laravel-boost__record-rule"  # writes .ai/rules
 WRITE_TOOLS = ("Write", "Edit", "NotebookEdit")
 READ_ONLY_MARKERS = ("planner", "reviewer", "checker", "gate-writer")
 NO_WRITE_MARKERS = ("planner", "reviewer", "checker")
@@ -113,6 +115,8 @@ def check(agent: Path, skills_dir: Path) -> tuple[str, list[str]]:
     stem = agent.stem
     if any(m in stem for m in READ_ONLY_MARKERS) and TINKER not in disallowed:
         problems.append(f"read-only agent must disallow {TINKER}")
+    if any(m in stem for m in READ_ONLY_MARKERS) and RECORD_RULE not in disallowed:
+        problems.append(f"read-only agent must disallow {RECORD_RULE}")
     if any(m in stem for m in NO_WRITE_MARKERS) and not all(t in disallowed for t in WRITE_TOOLS):
         problems.append("read-only agent must disallow Write, Edit, NotebookEdit")
     if ("reviewer" in stem or "checker" in stem) and field(head, "effort") == "xhigh":
