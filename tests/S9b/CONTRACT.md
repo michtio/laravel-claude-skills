@@ -1,6 +1,6 @@
 # Gate contract, slice S9b (laravel-layer): field-test fixes
 
-Requirements: R4, R8, R9, R10, R11, R15, R17, R23 (decisions log 2026-11-27: field-test fixes slice). Source: `internal-docs/skills-gaps.md`, 83 rows from building Laravel Auth Kit on the pack (rows 74 to 83 were appended while this gate was written; row 83 was added to S9b by the owner). Plan: slice S9b in `internal-docs/specs/2026-11-26-laravel-layer/plan.md`.
+Requirements: R4, R8, R9, R10, R11, R15, R17, R23 (decisions log 2026-11-27: field-test fixes slice). Source: `internal-docs/skills-gaps.md`, 83 rows from a package field test on the pack (rows 74 to 83 were appended while this gate was written; row 83 was added to S9b by the owner). Plan: slice S9b in `internal-docs/specs/2026-11-26-laravel-layer/plan.md`.
 
 The gate is written before the builder starts. The builder implements to this contract and never edits `tests/S9b/`, the S9b files named below, or any other file under `tests/`, except through the gate writer. The builder closes the rows in `skills-gaps.md` (this file does not edit it). Everything the earlier slices pinned stays, except the two amendments in section 10.
 
@@ -117,7 +117,7 @@ The merge rule (every gated PR merges with a merge commit, never a squash) has n
 - `Profile::laravel()` keeps its five S7 keys, in order, unless the profile sets a new key: then the new key is appended (order `test_database`, `php_matrix`, `test_pins`). The S7 tests pin the five-key array, and this keeps them green.
 - `ddev` on a Testbench package that runs on DDEV: the package gets what an app on DDEV gets.
   - `.ddev/config.claude-skills.yaml` holds the post-start hook (service `db`, idempotent, never `exec-host`) for `<slug>_test` (mysql, mariadb or the psql form for postgres), and a `web_environment` list with `DB_HOST=db`, `DB_PORT=<3306 or 5432>`, `DB_USERNAME=db`, `DB_PASSWORD=db` (DDEV's defaults). Host, port and credentials are not forced in `phpunit.xml.dist`: CI sets its own in the job.
-  - The pins are `DB_CONNECTION` (from the DDEV database type in `.ddev/config.yaml`: mysql to `mysql`, mariadb to `mariadb`, postgres to `pgsql`; `mysql` without a `database` block), `DB_DATABASE=<slug>_test` and `DB_URL=""`, each a forced `<env>` and a `<server>` twin. The other pins and the live flags are as before.
+  - The pins are `DB_CONNECTION` (from the DDEV database type in `.ddev/config.yaml`: mysql to `mysql`, mariadb to `mariadb`, postgres to `pgsql`; with no `database` block, DDEV's default, MariaDB 10.11, so `mariadb`: round 3, item 6), `DB_DATABASE=<slug>_test` and `DB_URL=""`, each a forced `<env>` and a `<server>` twin. The other pins and the live flags are as before.
   - The CI workflow (`ci: true`) gets the database service and the job environment (`DB_HOST: 127.0.0.1`, port, user, password) as for an app, the database name quoted.
 - For an app on DDEV, `ddev` changes nothing (the plan equals the one `auto` gives).
 - `ddev` on a project that does not run on DDEV (no `.ddev/`, or `runner: host`): exit 1, a message holding `laravel.test_database` and `DDEV`, nothing written, with `--check` and `--yes` alike. Resolved here: the key is a statement about DDEV, so a mismatch is an error, not a silent fallback.
@@ -140,8 +140,8 @@ The merge rule (every gated PR merges with a merge commit, never a squash) has n
 
 ## 4. Package skeleton and PHPStan paths (rows 9, 10, 25)
 
-- A Testbench package without `tests/Pest.php` gets one, as a created file in the plan: `declare(strict_types=1);`, `use Orchestra\Testbench\TestCase;` (Pint wants the import), `pest()->extend(TestCase::class)->in(__DIR__);`, valid PHP. An existing file is never replaced, changed or called a hand edit; a file the person edits after the first run is left alone (`No changes`). An app gets none.
-- `phpstan.neon` for a package (when the setup manages it): the paths are `src` (when it exists), `tests` (when it exists, or when this run creates `tests/Pest.php`), `workbench/app` (when it exists), in that order, never a directory that is missing. With `tests` in the list a fresh package with an empty `src` has files to analyse. The rerun does not change the file. An app keeps the S7 paths.
+- Round 3 (F2, amends this section): a Testbench package gets `tests/Pest.php` only when `pestphp/pest` is in `require` or `require-dev`, `tests/Pest.php` does not exist, there is no `tests/TestCase.php`, and no file under `tests/` calls `uses(`. Then it is a created file in the plan: `declare(strict_types=1);`, `use Orchestra\\Testbench\\TestCase;` (Pint wants the import), `pest()->extend(TestCase::class)->in(__DIR__);`, valid PHP. Otherwise nothing is planned and nothing printed about it. An existing file is never replaced, changed or called a hand edit; a file the person edits after the first run is left alone (`No changes`). An app gets none.
+- `phpstan.neon` for a package (when the setup manages it): the paths are `src` (when it exists), `tests` (when it exists as a directory, or when this run creates `tests/Pest.php`), `workbench/app` (when it exists), in that order, never a directory that is missing. A PHPUnit-only package without a tests folder lists `src` only; a Pest package gets `tests` because its Pest.php is planned. The rerun does not change the file. An app keeps the S7 paths.
 
 ## 5. CLAUDE.md before Boost (row 3)
 
@@ -167,12 +167,7 @@ Checked by `test_s9b_agents.py`, one paragraph or bullet per rule. Gate writer: 
 
 ## 10. Amendments to earlier gate files
 
-Two assertions pinned `['src']` as the PHPStan paths of a Testbench package whose `src` is empty and whose `tests/Pest.php` the setup now creates. The ruled fix makes the paths `['src', 'tests']`, so S9b amends them (the gate writer's reading of the 2026-11-27 ruling; the owner confirms or overrules):
-
-- `tests/Profile/ProfileLevelTest.php`, "lists src for a Testbench package": `toBe(['src'])` became `toBe(['src', 'tests'])`.
-- `tests/Profile/ProfileRound3Test.php`, "keeps the workbench package rule: a package with workbench analyses src": `toBe(['src'])` became `toBe(['src', 'tests'])`.
-
-The app cases (`['src']` for a project that is an app) are unchanged.
+None remain. Round 1 amended two assertions (`ProfileLevelTest`, `ProfileRound3Test`) from `['src']` to `['src', 'tests']`; round 3's rule (Pest.php only for a Pest package) makes the fixture package, which has no Pest, list `['src']` again, so both are back to their original text.
 
 ## 11. Red on the base commit, green by design
 
@@ -187,3 +182,16 @@ Team rule, ruled by the owner: everything ships with README, docs, CHANGELOG and
 - `laravel-review-checker`: the conventions lens checks that a diff that changes behavior updates the README, docs and CHANGELOG, and a missing update is an Important finding.
 - The pack's own `CHANGELOG.md` at the repo root: `# Changelog`, a `## [Unreleased]` section with Keep a Changelog `###` headings and entries, mentioning `1.0.0-beta.1`. `LICENSE` stays.
 - US spelling and no em dashes in what this slice adds (CHANGELOG, the guideline, the three agent files, README, docs/profile.md).
+
+## 13. Round 3 (PR review findings)
+
+Gate files: `tests/Profile/S9bRound3Test.php`, `S9bPackageSkeletonTest.php` (Pest added to the Pest cases). Same lock rules.
+
+1. **F2.** Section 4 above: Pest.php only for a Pest package that has no base case yet; PHPStan `tests` follows that file.
+2. **F1.** A `php_matrix` item or a `test_pins` value with a trailing newline (`"8.4\n"`, `"file\n"`, `"env\n"`) is refused as `laravel.php_matrix.<index>` or `laravel.test_pins.<NAME>`, exit 1, nothing written.
+3. **Order.** The printed options and `Profile::effective()` use one order whatever the profile sets: `runner`, `house_style`, `phpstan_level`, `monitoring`, `ci`, `test_database`, `php_matrix`, `test_pins`.
+4. **Symlinks.** A symlinked `tests` folder (package with Pest) or a symlinked `CLAUDE.md` (to a file outside, or dangling) is refused at plan time like the other owned paths: exit 1, a message naming the path and `symlink`, nothing written, the outside target untouched, no Pest.php plan shown.
+5. **Server twin.** With a pin set to `env`, a hand-written `<server>` twin for it whose value is not the standard one (`sync` for `QUEUE_CONNECTION`) is reported as `edited by hand: phpunit.xml` before the setup removes it, also when the setup wrote the twin and the person changed it. A standard-value twin is removed without that report.
+6. **Same engine.** With `test_database: ddev` on a package, the CI database service and the forced pins follow the DDEV database block: type, and DDEV's default version when the block names none (`mariadb` 10.11, `mysql` 8.0; no block at all is MariaDB 10.11, so `DB_CONNECTION=mariadb`, service `mariadb:10.11`, `MARIADB_DATABASE`). The local connection and the CI engine always agree.
+7. **Own DB keys.** A `DB_HOST`, `DB_PORT`, `DB_USERNAME` or `DB_PASSWORD` the person set in `.ddev/config.yaml` `web_environment` is never silently replaced: either the override leaves that key out (kept), or the setup exits non-zero naming the key and writes nothing. `.ddev/config.yaml` is never changed. The keys the person did not set are still written.
+8. **Wording.** This file names no private consumer project.

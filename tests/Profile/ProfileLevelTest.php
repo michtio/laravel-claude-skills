@@ -91,7 +91,7 @@ it('lists src for a Testbench package', function () {
     $this->setupRun($dir, ['--yes' => true]);
     $config = phpstanConfig($dir);
 
-    expect($config['parameters']['paths'])->toBe(['src', 'tests'])
+    expect($config['parameters']['paths'])->toBe(['src'])
         ->and($config['parameters']['level'])->toBe(6)
         ->and($config['includes'])->toBe([LARASTAN_INCLUDE, PACK_INCLUDE]);
 });

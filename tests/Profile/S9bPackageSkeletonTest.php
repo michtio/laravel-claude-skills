@@ -25,6 +25,16 @@ function s9bWithLarastan(string $dir): void
 }
 
 /**
+ * Put Pest into composer.json: a Pest package is the one that gets tests/Pest.php (round 3).
+ */
+function s9bWithPest(string $dir): void
+{
+    $composer = json_decode((string) file_get_contents($dir.'/composer.json'), true);
+    $composer['require-dev']['pestphp/pest'] = '^4.0';
+    file_put_contents($dir.'/composer.json', json_encode($composer, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
+}
+
+/**
  * The paths of the written phpstan.neon.
  *
  * @return list<string>
@@ -39,6 +49,7 @@ function s9bPhpstanPaths(string $dir): array
 
 it('plans tests/Pest.php for a package that has none, as a created file in the plan', function () {
     $dir = $this->project('package');
+    s9bWithPest($dir);
 
     [$code, $output] = $this->setupRun($dir, ['--check' => true]);
 
@@ -50,6 +61,7 @@ it('plans tests/Pest.php for a package that has none, as a created file in the p
 
 it('writes a Pest.php that extends Testbench, is house style and parses', function () {
     $dir = $this->project('package');
+    s9bWithPest($dir);
 
     $this->setupRun($dir, ['--yes' => true]);
     $pest = (string) file_get_contents($dir.'/tests/Pest.php');
@@ -68,6 +80,7 @@ it('writes a Pest.php that extends Testbench, is house style and parses', functi
 
 it('never replaces or changes an existing tests/Pest.php, and never calls it a hand edit', function () {
     $dir = $this->project('package');
+    s9bWithPest($dir);
     mkdir($dir.'/tests');
     file_put_contents($dir.'/tests/Pest.php', "<?php\n\n// mine\n");
 
@@ -79,6 +92,7 @@ it('never replaces or changes an existing tests/Pest.php, and never calls it a h
 
 it('leaves a Pest.php the person edited after the first run alone: No changes, exit 0', function () {
     $dir = $this->project('package');
+    s9bWithPest($dir);
     $this->setupRun($dir, ['--yes' => true]);
     file_put_contents($dir.'/tests/Pest.php', (string) file_get_contents($dir.'/tests/Pest.php')."\n// team note\n");
 
@@ -100,9 +114,10 @@ it('gives an app no tests/Pest.php', function () {
 // 2. phpstan.neon paths
 // =========================================================================
 
-it('lists src and tests for a package, whose Pest.php is created in the same run', function () {
+it('lists src and tests for a Pest package, whose Pest.php is created in the same run', function () {
     $dir = $this->project('package');
     s9bWithLarastan($dir);
+    s9bWithPest($dir);
 
     $this->setupRun($dir, ['--yes' => true]);
 
@@ -114,6 +129,7 @@ it('never lists a directory that does not exist, so an empty or missing src cann
     unlink($dir.'/src/.gitkeep');
     rmdir($dir.'/src');
     s9bWithLarastan($dir);
+    s9bWithPest($dir);
 
     $this->setupRun($dir, ['--yes' => true]);
 
@@ -128,6 +144,7 @@ it('adds workbench/app when it exists, after src and tests', function () {
     $dir = $this->project('package');
     mkdir($dir.'/workbench/app', 0777, true);
     s9bWithLarastan($dir);
+    s9bWithPest($dir);
 
     $this->setupRun($dir, ['--yes' => true]);
 
@@ -148,6 +165,7 @@ it('lists the tests directory of a package that already has one, without plannin
 it('keeps the paths stable on a rerun: --check exits 0, No changes', function () {
     $dir = $this->project('package');
     s9bWithLarastan($dir);
+    s9bWithPest($dir);
     $this->setupRun($dir, ['--yes' => true]);
 
     [$code, $output] = $this->setupRun($dir, ['--check' => true]);

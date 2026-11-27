@@ -8,8 +8,8 @@ declare(strict_types=1);
  * Contract: tests/S9b/CONTRACT.md section 2.
  *
  * `env` means the pin is written without force, so a value the shell or `ddev exec env X=y` sets
- * wins, and the phpunit default applies when nothing is set. AK-S4's gate runs the Session tests
- * with SESSION_DRIVER=file, then database, then redis in one gate: a fixed value cannot serve it.
+ * wins, and the phpunit default applies when nothing is set. A gate that runs the Session tests
+ * with SESSION_DRIVER=file, then database, then redis in one run cannot use a fixed value.
  * The real run is tests/gate/test_s9b_ddev.py (test_6).
  */
 
