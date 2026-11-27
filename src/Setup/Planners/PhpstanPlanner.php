@@ -139,6 +139,8 @@ final class PhpstanPlanner implements Planner
      * header; one still as the setup recorded it is removed by the plan instead.
      * A phpstan.neon the person wrote (one that includes the `.dist`, PHPStan's
      * local-override pattern) is never named. Warn only: a hand edit is never deleted.
+     * Proven by tests/Profile/S9d1OutputTest.php ("warns that a hand-edited setup
+     * copy shadows the .dist", "prints no shadow warning for a config the person wrote").
      *
      * @throws SetupException When the state file holds a tampered step.
      * @author michtio

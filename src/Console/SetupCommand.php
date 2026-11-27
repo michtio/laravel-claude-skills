@@ -359,6 +359,8 @@ final class SetupCommand extends Command
      * `.claude/settings.json`, on every run: the gate command and the test and
      * format commands in the runner's form, and the agents plugin. Printed text
      * only: the setup never writes Claude Code's settings (they are the user's).
+     * Proven by tests/Profile/S9d1OutputTest.php ("prints suggested .claude/settings.json
+     * permissions", "never writes .claude/settings.json").
      *
      * @author michtio
      */
@@ -568,7 +570,8 @@ final class SetupCommand extends Command
             return false;
         }
 
-        // Counted as the plan counts: the state file only when it is the one change.
+        // Counted as the plan counts: the state file only when it is the one change
+        // (S9d1OutputTest "counts the same changes", S9bOutputTest "1 change planned.").
         $count = count($written) + $actionsRun + count($ran);
         $count = $count === 0 && $stateWritten ? 1 : $count;
         $this->info('Applied: '.($count === 1 ? '1 change' : $count.' changes').'.');

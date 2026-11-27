@@ -23,6 +23,7 @@ use Michtio\LaravelClaudeSkills\Setup\Planners\Planner;
  * The record of a file the setup no longer writes and the person deleted (a
  * takeover: phpstan.neon.dist created, phpstan.neon deleted) is kept while
  * nothing else changes, so `--check` exits 0; the next real change drops it.
+ * Proven by tests/Profile/S9d1OutputTest.php ("exits 0 on --check after the takeover").
  *
  * The state file change is shown with the others and computed again at apply
  * time from the files actually written (stateAfter()), so an aborted run never

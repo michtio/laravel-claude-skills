@@ -24,13 +24,16 @@ use Symfony\Component\Yaml\Yaml;
  * Owned: the `laravel` value and `env.APP_DEBUG`; other keys and env entries are
  * kept (an env list of KEY=value strings gets an `APP_DEBUG=true` item). A
  * `laravel` value other than absent, "@testbench" or "./" is a hand edit. The file
- * is edited as text: the top-level `laravel:` line is replaced (or added first),
+ * is edited as text: the top-level `laravel:` line is replaced whole, a trailing
+ * comment on it included (or added first),
  * and `APP_DEBUG` is set in a block `env:` map or list (replaced in place, or
  * appended after its last entry), or an `env:` block is appended. Every other
  * line, comments and blank lines included, stays as it is. Only when the edited
  * text does not parse to the owned values (a flow-style `env: {...}`, for
  * example) is the file rewritten through symfony/yaml, without its comments; the
- * diff shows that before it is applied.
+ * diff shows that before it is applied. Proven by tests/Profile/S9d1RunnerTest.php
+ * ("keeps every line of testbench.yaml it does not own", "keeps a comment inside
+ * an env map").
  *
  * @author michtio
  */

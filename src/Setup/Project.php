@@ -193,6 +193,8 @@ final class Project
      * string, so the container shell expands a `$` in the code; `ddev exec --raw --`
      * passes the arguments as they are. `ddev artisan` is a DDEV custom command with
      * `ExecRaw: true` and the host forms need nothing, so those stay as artisan() gives them.
+     * Proven by tests/Profile/S9d1RunnerTest.php ("gives a tinker form in the DDEV
+     * runner guideline that survives ddev exec", "carries no plain ddev exec tinker").
      *
      * @author michtio
      */

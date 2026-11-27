@@ -24,7 +24,14 @@ use Michtio\LaravelClaudeSkills\Setup\Planners\WorkflowPlanner;
  *   creates (MySQL keeps them) and the connections per-test apps leave open.
  * - Workflows without a database: when the suite runs on a database server,
  *   every workflow the setup does not own that runs the tests and has no
- *   `services:` is named. None is changed.
+ *   `services:` is named. None is changed. A heuristic: `services:` anywhere in
+ *   the file counts, so a workflow with a service on one job and tests on
+ *   another is not named (a documented false negative).
+ *
+ * Proven by tests/Profile/S9d1OutputTest.php: "warns when Boost wrote into the
+ * @testbench skeleton", "prints the runner-form boost:update", "warns when
+ * test_database ddev moves a package suite", "names every workflow it does not
+ * own", each with its negative case.
  *
  * @author michtio
  */
@@ -46,7 +53,7 @@ final class Advisories
     /**
      * A workflow command that runs the test suite.
      */
-    public const TEST_COMMAND = '/\bvendor\/bin\/(pest|phpunit|paratest)\b|\bartisan test\b|\bcomposer( run(-script)?)? test\b|\btestbench package:test\b/';
+    public const TEST_COMMAND = '/\bvendor\/bin\/(pest|phpunit|paratest)(?![\w:-])|\bartisan test(?![\w:-])|\bcomposer( run(-script)?)? test(?![\w:-])|\btestbench package:test(?![\w:-])/';
 
     // Public Methods
     // =========================================================================
@@ -140,7 +147,7 @@ final class Advisories
 
         $phpunit = PlannedFile::read($project->root, (new PhpunitPlanner())->path($project));
 
-        if ($phpunit === null || preg_match('/<env\b(?=[^>]*\bname="DB_DATABASE")(?=[^>]*\bvalue=":memory:")[^>]*>/', $phpunit) !== 1) {
+        if ($phpunit === null || preg_match('/<env\b(?=[^>]*\bname=["\']DB_DATABASE["\'])(?=[^>]*\bvalue=["\']:memory:["\'])[^>]*>/', $phpunit) !== 1) {
             return null;
         }
 
@@ -172,7 +179,8 @@ final class Advisories
                 continue;
             }
 
-            $content = (string) file_get_contents($file);
+            // Comment lines run nothing.
+            $content = (string) preg_replace('/^\s*#.*$/m', '', (string) file_get_contents($file));
 
             if (preg_match(self::TEST_COMMAND, $content) === 1 && preg_match('/^\s+services\s*:/m', $content) !== 1) {
                 $named[] = $relative;
@@ -200,7 +208,12 @@ final class Advisories
             return false;
         }
 
-        $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($directory, \FilesystemIterator::SKIP_DOTS));
+        // An unreadable subfolder is skipped: an advisory never stops the setup.
+        $files = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($directory, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::LEAVES_ONLY,
+            \RecursiveIteratorIterator::CATCH_GET_CHILD,
+        );
 
         foreach ($files as $file) {
             if ($file instanceof \SplFileInfo && $file->isFile() && ! $file->isLink() && str_ends_with($file->getFilename(), 'Test.php')) {

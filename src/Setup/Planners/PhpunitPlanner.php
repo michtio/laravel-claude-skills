@@ -72,7 +72,10 @@ final class PhpunitPlanner implements Planner
 
     /**
      * The bcrypt cost for tests, as Laravel's app skeleton pins it: every hash a
-     * test makes stays fast. Forced unless the file already sets it unforced.
+     * test makes stays fast. Forced unless the file already sets it unforced; a forced
+     * value is owned like every pin. Proven by tests/Profile/S9d1OutputTest.php
+     * ("forces BCRYPT_ROUNDS=4") and tests/Setup/SetupIsolationRound2Test.php (the
+     * unforced stock line).
      */
     public const BCRYPT_ROUNDS = '4';
 

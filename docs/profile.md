@@ -166,7 +166,7 @@ The setup forces the test environment in the PHPUnit file so the suite never rea
 - `env` writes the pin without force and without a `<server>` twin, with the standard value as its default (`array`, `array`, `sync`, `array`), so a value the shell or `ddev exec env SESSION_DRIVER=file vendor/bin/pest` sets wins, and the default applies when nothing is set. Use it for a gate that runs the same tests under several drivers.
 - Changing or removing a pin plans only that line of the PHPUnit file; a rerun reports `No changes`.
 
-`BCRYPT_ROUNDS` is pinned to `4`, forced, as Laravel's app skeleton does, so every hash a test makes stays fast. A `BCRYPT_ROUNDS` the PHPUnit file already sets without `force` (the stock skeleton line) is left as it is.
+`BCRYPT_ROUNDS` is pinned to `4`, forced, as Laravel's app skeleton does, so every hash a test makes stays fast. A `BCRYPT_ROUNDS` the PHPUnit file already sets without `force` (the stock skeleton line) is left as it is; a forced one is owned like the other pins and set to `4`.
 
 ## Extra setup steps
 

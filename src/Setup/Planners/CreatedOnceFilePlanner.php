@@ -113,7 +113,9 @@ final class CreatedOnceFilePlanner implements Planner
      * The planner for the boost.json seed Boost reads on a non-interactive
      * `boost:install -n`: Claude Code as the agent, this pack among the
      * third-party packages, the Laravel Cloud skill off. Created only when the
-     * project has no boost.json; an existing one is never touched.
+     * project has no boost.json; an existing one is never touched. Proven by
+     * tests/Profile/S9d1OutputTest.php ("creates the boost.json seed", "never changes
+     * a boost.json that exists").
      *
      * @author michtio
      */

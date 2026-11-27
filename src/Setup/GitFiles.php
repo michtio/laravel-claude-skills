@@ -138,6 +138,8 @@ SH;
      * pins, the archive chosen by DDEV's `$TARGETARCH` and checked against
      * gitleaks' own checksums, so the local scan is the CI scan. DDEV merges
      * `.ddev/web-build/Dockerfile.*` into the web image; `ddev restart` builds it.
+     * Proven by tests/Profile/S9d1GitleaksTest.php ("plans a pinned gitleaks install
+     * into the DDEV web image"); the real build runs in tests/gate/test_s9b_ddev.py.
      *
      * @author michtio
      */
@@ -160,9 +162,9 @@ RUN set -eu; \
     esac; \
     archive="gitleaks_{$version}_linux_\${arch}.tar.gz"; \
     cd /tmp; \
-    curl -sSfL -o "\${archive}" "https://github.com/gitleaks/gitleaks/releases/download/v{$version}/\${archive}"; \
+    curl -sSfL --retry 3 --proto '=https' --tlsv1.2 -o "\${archive}" "https://github.com/gitleaks/gitleaks/releases/download/v{$version}/\${archive}"; \
     echo "\${sum}  \${archive}" | sha256sum -c -; \
-    tar -xzf "\${archive}" -C /usr/local/bin gitleaks; \
+    tar -xzf "\${archive}" --no-same-owner -C /usr/local/bin gitleaks; \
     rm -f "\${archive}"
 
 DOCKER;
@@ -172,6 +174,8 @@ DOCKER;
      * The secret scan step: gitleaks with the project config. Without gitleaks it
      * skips with a message on the host, and fails in CI and inside DDEV
      * (`IS_DDEV_PROJECT=true`), where the setup installs it in the web image.
+     * Proven by tests/Profile/S9d1GitleaksTest.php ("fails the secret scan inside
+     * DDEV when gitleaks is missing", "still skips ... on the host").
      *
      * @author michtio
      */
