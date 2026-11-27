@@ -1,0 +1,21 @@
+{
+  "name": "laravel-claude-skills",
+  "owner": {
+    "name": "michtio"
+  },
+  "description": "Agents for Laravel projects with independent gates, on top of Laravel Boost.",
+  "plugins": [
+    {
+      "name": "laravel-claude-skills",
+      "source": "./",
+      "description": "Agents for Laravel projects with independent gates, on top of Laravel Boost. Skills ship through Boost.",
+      "author": {
+        "name": "michtio"
+      },
+      "homepage": "https://github.com/michtio/laravel-claude-skills",
+      "repository": "https://github.com/michtio/laravel-claude-skills",
+      "license": "MIT",
+      "category": "development"
+    }
+  ]
+}
