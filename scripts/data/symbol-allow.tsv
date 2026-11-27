@@ -1,0 +1,8 @@
+# Symbols scripts/laravel_source.py check must not report, one per line: symbol<TAB>reason.
+# Only for names that are not in laravel/framework on purpose (packages, app examples).
+# A key of the form path.md:LINE allows one line instead of a symbol everywhere.
+# Symbols are as the checker prints them (Class::method(), artisan cmd, config file.key).
+artisan tinker	laravel/tinker package, required by the default laravel/laravel skeleton
+artisan test	nunomaduro/collision package (Laravel test runner), required by the default skeleton
+artisan boost:install	laravel/boost package, which this package extends
+artisan boost:update	laravel/boost package, which this package extends
