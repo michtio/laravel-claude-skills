@@ -18,7 +18,9 @@ Contracts the builder implements:
 """
 from __future__ import annotations
 
+import os
 import re
+import shutil
 import subprocess
 import unittest
 from pathlib import Path
@@ -103,7 +105,13 @@ class PitfallFacts(unittest.TestCase):
 
 class RuleSuite(unittest.TestCase):
     def test_pest_phpstan_filter_is_green(self):
-        r = run(["ddev", "exec", "vendor/bin/pest", "--filter=PHPStan"])
+        if shutil.which("ddev"):
+            cmd = ["ddev", "exec", "vendor/bin/pest", "--filter=PHPStan"]
+        elif os.environ.get("CI") and (REPO / "vendor/bin/pest").is_file():
+            cmd = ["vendor/bin/pest", "--filter=PHPStan"]
+        else:
+            self.skipTest("needs ddev, or CI=true with composer-installed vendor/bin/pest")
+        r = run(cmd)
         self.assertEqual(r.returncode, 0, r.stdout[-3000:] + r.stderr[-1000:])
 
 
