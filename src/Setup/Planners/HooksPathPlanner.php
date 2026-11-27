@@ -17,9 +17,10 @@ use Symfony\Component\Process\Process;
  *   configuration of a repository it is not the root of).
  * - core.hooksPath already `.githooks`: nothing to do.
  * - core.hooksPath set to anything else: never changed, and a line saying so.
- * - Unset, with an active hook in the repository's hooks directory (an executable
- *   file not ending in .sample): no action, since setting core.hooksPath would
- *   switch that hook off, and a line naming the hooks and the manual command.
+ * - Unset, with an active hook in the repository's hooks directory (the one
+ *   `git rev-parse --git-path hooks` resolves; an executable file not ending in
+ *   .sample): no action, since setting core.hooksPath would switch that hook
+ *   off, and a line naming that directory, the hooks and the manual command.
  * - Unset otherwise: one planned action, confirmed with the file changes.
  *
  * @author michtio
@@ -68,11 +69,11 @@ final class HooksPathPlanner
             return [null, ['core.hooksPath is already set to '.$value.'; leaving it (the commit-msg hook in '.self::HOOKS.' is not active)']];
         }
 
-        $existing = $this->existingHooks($root);
+        [$hooksDirectory, $existing] = $this->existingHooks($root);
 
         if ($existing !== []) {
             return [null, [
-                'Existing git hooks in .git/hooks ('.implode(', ', $existing).'): leaving core.hooksPath unset, since setting it would switch them off'
+                'Existing git hooks in '.$hooksDirectory.' ('.implode(', ', $existing).'): leaving core.hooksPath unset, since setting it would switch them off'
                 .' (the commit-msg hook in '.self::HOOKS.' is not active). Move them to '.self::HOOKS.' and run `git config core.hooksPath '.self::HOOKS.'` to use both.',
             ]];
         }
@@ -91,10 +92,12 @@ final class HooksPathPlanner
     // =========================================================================
 
     /**
-     * Names of the active hooks in the repository's own hooks directory: executable
-     * files not ending in .sample, sorted.
+     * The repository's own hooks directory, as `git rev-parse --git-path hooks`
+     * resolves it (in a linked worktree, the main repository's), made absolute,
+     * and the names of the active hooks in it: executable files not ending in
+     * .sample, sorted.
      *
-     * @return list<string>
+     * @return array{0: string, 1: list<string>}
      * @author michtio
      */
     private function existingHooks(string $root): array
@@ -102,7 +105,7 @@ final class HooksPathPlanner
         $directory = $this->git($root, ['rev-parse', '--git-path', 'hooks']);
 
         if ($directory === null || $directory === '') {
-            return [];
+            return ['', []];
         }
 
         if (! str_starts_with($directory, '/')) {
@@ -110,7 +113,7 @@ final class HooksPathPlanner
         }
 
         if (! is_dir($directory)) {
-            return [];
+            return [$directory, []];
         }
 
         $hooks = [];
@@ -123,7 +126,7 @@ final class HooksPathPlanner
 
         sort($hooks);
 
-        return $hooks;
+        return [$directory, $hooks];
     }
 
     /**
