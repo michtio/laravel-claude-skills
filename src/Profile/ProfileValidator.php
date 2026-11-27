@@ -161,6 +161,35 @@ final class ProfileValidator
         return null;
     }
 
+    /**
+     * Why a step name or command is refused for the control characters it holds, or
+     * null when it holds none. Refused: C0 controls (U+0000 to U+001F, ESC
+     * included), U+007F and C1 controls (U+0080 to U+009F), which could rewrite the
+     * plan on a terminal (a carriage return or a cursor escape can hide a command
+     * behind a harmless line). A command may hold tabs and newlines (a multi-line
+     * command is shown as one block); a name may not. The reason never repeats the
+     * characters it refuses.
+     *
+     * @author michtio
+     */
+    public static function controlCharacters(string $value, bool $command): ?string
+    {
+        $pattern = $command ? '/[\x{00}-\x{08}\x{0B}-\x{1F}\x{7F}-\x{9F}]/u' : '/[\x{00}-\x{1F}\x{7F}-\x{9F}]/u';
+        $found = preg_match($pattern, $value);
+
+        if ($found === 0) {
+            return null;
+        }
+
+        if ($found === false) {
+            return 'must be valid UTF-8 text';
+        }
+
+        return $command
+            ? 'must not hold control characters (a carriage return, an escape sequence, NUL and the like); only tabs and newlines are allowed'
+            : 'must not hold control characters (a newline, a tab, a carriage return, an escape sequence and the like)';
+    }
+
     // Private Methods
     // =========================================================================
 
@@ -201,6 +230,13 @@ final class ProfileValidator
 
                 if (! is_string($item->{$key})) {
                     throw ProfileException::field($path.'.'.$key, 'must be a string');
+                }
+
+                // Steps are printed in the plan and run by the setup; builders are read by agents.
+                $reason = $timeout ? null : self::controlCharacters($item->{$key}, $key === 'command');
+
+                if ($reason !== null) {
+                    throw ProfileException::field($path.'.'.$key, $reason);
                 }
             }
 

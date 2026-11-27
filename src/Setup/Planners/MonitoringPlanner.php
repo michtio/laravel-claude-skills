@@ -68,12 +68,16 @@ final class MonitoringPlanner implements ActionPlanner
                 implode(' ', $command),
                 // composer.json is read again: it may have changed since the plan was shown.
                 static fn (): bool => ! Project::detect($project->root)->requires($package),
-                static function () use ($command, $project): bool {
+                static function (\Closure $output) use ($command, $project): bool {
                     try {
                         $process = new Process($command, $project->root);
                         $process->setTimeout(null);
-                        $process->run();
-                    } catch (\Throwable) {
+                        $process->run(static function (string $type, string $buffer) use ($output): void {
+                            $output($buffer);
+                        });
+                    } catch (\Throwable $exception) {
+                        $output($exception->getMessage()."\n");
+
                         return false;
                     }
 

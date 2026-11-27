@@ -177,13 +177,13 @@ final class SetupCommand extends Command
 
         foreach ($plan->actions as $action) {
             $this->newLine();
-            $this->line('Run: '.$action->line);
+            $this->commandLine('Run: ', $action->line);
         }
 
         foreach ($plan->steps as $step) {
             $this->newLine();
             $this->line(OutputFormatter::escape('Extra step: '.$step['name']));
-            $this->line(OutputFormatter::escape('Run: '.$step['command']));
+            $this->commandLine('Run: ', $step['command']);
         }
 
         $count = count($plan->changes) + count($plan->actions) + count($plan->steps);
@@ -369,13 +369,13 @@ final class SetupCommand extends Command
                     break;
                 }
 
-                if (! $action->run()) {
+                if (! $action->run($this->rawWriter())) {
                     $failure = '`'.$action->line.'` failed.';
 
                     break;
                 }
 
-                $this->line('Ran '.$action->line);
+                $this->commandLine('Ran ', $action->line);
                 $actionsRun++;
             }
         }
@@ -396,7 +396,7 @@ final class SetupCommand extends Command
                     break;
                 }
 
-                $this->line(OutputFormatter::escape('Ran '.$step['command']));
+                $this->commandLine('Ran ', $step['command']);
                 $ran[] = $step;
             }
 
@@ -417,6 +417,35 @@ final class SetupCommand extends Command
         $this->info('Applied: '.($count === 1 ? '1 change' : $count.' changes').'.');
 
         return true;
+    }
+
+    /**
+     * Print a command after its prefix (`Run: `, `Ran `). A multi-line command reads
+     * as one block: each continuation line is indented under the first.
+     *
+     * @author michtio
+     */
+    private function commandLine(string $prefix, string $command): void
+    {
+        $lines = preg_split('/\R/', $command) ?: [$command];
+        $this->line(OutputFormatter::escape($prefix.array_shift($lines)));
+
+        foreach ($lines as $line) {
+            $this->line(OutputFormatter::escape(str_repeat(' ', strlen($prefix)).$line));
+        }
+    }
+
+    /**
+     * A writer that passes a process's output (stdout and stderr) to the console as is.
+     *
+     * @return \Closure(string): void
+     * @author michtio
+     */
+    private function rawWriter(): \Closure
+    {
+        return function (string $buffer): void {
+            $this->output->write($buffer, false, \Symfony\Component\Console\Output\OutputInterface::OUTPUT_RAW);
+        };
     }
 
     /**
@@ -453,10 +482,13 @@ final class SetupCommand extends Command
         try {
             $process = new Process(['sh', '-c', $command], $root);
             $process->setTimeout(null);
-            $process->run(function (string $type, string $buffer): void {
-                $this->output->write($buffer, false, \Symfony\Component\Console\Output\OutputInterface::OUTPUT_RAW);
+            $write = $this->rawWriter();
+            $process->run(static function (string $type, string $buffer) use ($write): void {
+                $write($buffer);
             });
-        } catch (\Throwable) {
+        } catch (\Throwable $exception) {
+            $this->rawWriter()($exception->getMessage()."\n");
+
             return false;
         }
 

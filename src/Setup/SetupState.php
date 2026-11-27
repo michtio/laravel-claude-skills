@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Michtio\LaravelClaudeSkills\Setup;
 
+use Michtio\LaravelClaudeSkills\Profile\ProfileValidator;
+
 /**
  * What the setup wrote last, kept in `.ai/claude-skills-setup.json`.
  *
@@ -54,6 +56,7 @@ final class SetupState
     /**
      * Load the state of a project; a missing or unreadable file is an empty state.
      *
+     * @throws SetupException When a recorded step holds control characters (a tampered file).
      * @author michtio
      */
     public static function load(string $root): self
@@ -73,10 +76,20 @@ final class SetupState
         $steps = [];
 
         if (is_array($decoded) && is_array($decoded['steps'] ?? null)) {
-            foreach ($decoded['steps'] as $step) {
-                if (is_array($step) && is_string($step['name'] ?? null) && is_string($step['command'] ?? null)) {
-                    $steps[] = ['name' => $step['name'], 'command' => $step['command']];
+            foreach (array_values($decoded['steps']) as $index => $step) {
+                if (! is_array($step) || ! is_string($step['name'] ?? null) || ! is_string($step['command'] ?? null)) {
+                    continue;
                 }
+
+                foreach (['name', 'command'] as $key) {
+                    $reason = ProfileValidator::controlCharacters($step[$key], $key === 'command');
+
+                    if ($reason !== null) {
+                        throw new SetupException(self::PATH.': steps.'.$index.'.'.$key.': '.$reason.'. The state file was changed by hand; restore it from version control.');
+                    }
+                }
+
+                $steps[] = ['name' => $step['name'], 'command' => $step['command']];
             }
         }
 

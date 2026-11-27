@@ -82,7 +82,7 @@ final class HooksPathPlanner implements ActionPlanner
             new PlannedAction(
                 'git config core.hooksPath '.self::HOOKS,
                 fn (): bool => $this->hooksPath($root) === null,
-                fn (): bool => $this->git($root, ['config', 'core.hooksPath', self::HOOKS]) !== null,
+                fn (\Closure $output): bool => $this->git($root, ['config', 'core.hooksPath', self::HOOKS]) !== null,
             ),
             [],
         ];

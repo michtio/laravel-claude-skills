@@ -6,6 +6,7 @@ namespace Michtio\LaravelClaudeSkills\Setup\Planners;
 
 use Michtio\LaravelClaudeSkills\Setup\PlannedFile;
 use Michtio\LaravelClaudeSkills\Setup\Project;
+use Symfony\Component\Process\Process;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -16,8 +17,12 @@ use Symfony\Component\Yaml\Yaml;
  *
  * The workflow does not depend on the runner (CI never runs DDEV), so changing the
  * runner never changes it. It follows the project:
- * - PHP: the X.Y of composer.json `config.platform.php`, else the lowest X.Y of
- *   `require.php`, else 8.4;
+ * - PHP, first match wins: the X.Y of `php_version` in the DDEV config
+ *   (`.ddev/config.yaml` and its `config.*.yaml` overrides), of composer.json
+ *   `config.platform.php`, the lowest X.Y of `require.php`, else 8.4;
+ * - push: only to the default branch (origin's HEAD, else git's
+ *   `init.defaultBranch`, else `main`; `main` outside a git repository), plus every
+ *   pull request; a newer run cancels an older one only for pull requests;
  * - database: for an app whose suite runs on MySQL, MariaDB or PostgreSQL, a
  *   service container with the test database the PHPUnit pins name (the image of
  *   the DDEV database when `.ddev/config.yaml` exists, else the connection's);
@@ -52,6 +57,11 @@ final class WorkflowPlanner implements Planner
      * The PHP version when composer.json names none.
      */
     public const DEFAULT_PHP = '8.4';
+
+    /**
+     * The default branch when git names none.
+     */
+    public const DEFAULT_BRANCH = 'main';
 
     /**
      * Database images: DDEV database type => [image, default version, port, user, password].
@@ -100,6 +110,8 @@ final class WorkflowPlanner implements Planner
             '',
             'on:',
             '  push:',
+            '    branches:',
+            "      - '".$this->defaultBranch($project->root)."'",
             '  pull_request:',
             '',
             'permissions:',
@@ -107,7 +119,7 @@ final class WorkflowPlanner implements Planner
             '',
             'concurrency:',
             '  group: claude-skills-gate-${{ github.ref }}',
-            '  cancel-in-progress: true',
+            "  cancel-in-progress: \${{ github.event_name == 'pull_request' }}",
             '',
             'jobs:',
             '  gate:',
@@ -125,15 +137,15 @@ final class WorkflowPlanner implements Planner
             if ($kind === 'postgres') {
                 $lines[] = '          POSTGRES_USER: '.$user;
                 $lines[] = '          POSTGRES_PASSWORD: '.$password;
-                $lines[] = '          POSTGRES_DB: '.$name;
+                $lines[] = "          POSTGRES_DB: '".$name."'";
                 $health = 'pg_isready -U '.$user;
             } elseif ($kind === 'mariadb') {
                 $lines[] = '          MARIADB_ROOT_PASSWORD: '.$password;
-                $lines[] = '          MARIADB_DATABASE: '.$name;
+                $lines[] = "          MARIADB_DATABASE: '".$name."'";
                 $health = 'healthcheck.sh --connect --innodb_initialized';
             } else {
                 $lines[] = '          MYSQL_ROOT_PASSWORD: '.$password;
-                $lines[] = '          MYSQL_DATABASE: '.$name;
+                $lines[] = "          MYSQL_DATABASE: '".$name."'";
                 $health = 'mysqladmin ping -h 127.0.0.1 -p'.$password;
             }
 
@@ -200,12 +212,19 @@ final class WorkflowPlanner implements Planner
     // =========================================================================
 
     /**
-     * The PHP version for CI: config.platform.php, else the lowest X.Y of require.php, else the default.
+     * The PHP version for CI, first match wins: the DDEV php_version, config.platform.php,
+     * the lowest X.Y of require.php, the default.
      *
      * @author michtio
      */
     private function phpVersion(Project $project): string
     {
+        $ddev = $this->ddevConfig($project->root)['php_version'] ?? null;
+
+        if ((is_string($ddev) || is_int($ddev) || is_float($ddev)) && preg_match('/^(\d+)\.(\d+)/', (string) $ddev, $m) === 1) {
+            return $m[1].'.'.$m[2];
+        }
+
         $composer = $project->composerJson();
         $platform = is_array($composer['config'] ?? null) && is_array($composer['config']['platform'] ?? null)
             ? ($composer['config']['platform']['php'] ?? null)
@@ -273,19 +292,12 @@ final class WorkflowPlanner implements Planner
      */
     private function ddevDatabase(string $root): ?array
     {
-        $file = $root.'/.ddev/config.yaml';
-
-        if (! is_file($file)) {
+        if (! is_file($root.'/.ddev/config.yaml')) {
             return null;
         }
 
-        try {
-            $config = Yaml::parse((string) file_get_contents($file));
-        } catch (\Throwable) {
-            return null;
-        }
-
-        $database = is_array($config) && is_array($config['database'] ?? null) ? $config['database'] : [];
+        $config = $this->ddevConfig($root);
+        $database = is_array($config['database'] ?? null) ? $config['database'] : [];
         $type = is_string($database['type'] ?? null) ? $database['type'] : 'mariadb';
         $version = $database['version'] ?? null;
         $version = is_string($version) || is_int($version) || is_float($version) ? (string) $version : null;
@@ -299,5 +311,82 @@ final class WorkflowPlanner implements Planner
         }
 
         return [$type, $version];
+    }
+
+    /**
+     * The DDEV project config: `.ddev/config.yaml` with the `.ddev/config.*.yaml`
+     * overrides merged over it in name order, as DDEV merges them. Empty without a
+     * DDEV config; a file that does not parse is skipped.
+     *
+     * @return array<mixed>
+     * @author michtio
+     */
+    private function ddevConfig(string $root): array
+    {
+        $main = $root.'/.ddev/config.yaml';
+
+        if (! is_file($main)) {
+            return [];
+        }
+
+        $files = glob($root.'/.ddev/config.*.yaml') ?: [];
+        sort($files);
+        $config = [];
+
+        foreach ([$main, ...$files] as $file) {
+            try {
+                $parsed = Yaml::parse((string) file_get_contents($file));
+            } catch (\Throwable) {
+                continue;
+            }
+
+            if (is_array($parsed)) {
+                $config = array_replace_recursive($config, $parsed);
+            }
+        }
+
+        return $config;
+    }
+
+    /**
+     * The branch the push trigger runs on: origin's HEAD (without `origin/`), else
+     * git's `init.defaultBranch`, else `main`. Outside a git repository (or with a
+     * name that is not a plain branch name) it is `main`.
+     *
+     * @author michtio
+     */
+    private function defaultBranch(string $root): string
+    {
+        if ($this->git($root, ['rev-parse', '--is-inside-work-tree']) !== 'true') {
+            return self::DEFAULT_BRANCH;
+        }
+
+        $origin = $this->git($root, ['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD']);
+        $branch = $origin !== null && str_starts_with($origin, 'origin/') ? substr($origin, 7) : null;
+        $branch ??= $this->git($root, ['config', '--get', 'init.defaultBranch']);
+
+        return $branch !== null && preg_match('#^[A-Za-z0-9][A-Za-z0-9._/-]*$#', $branch) === 1 ? $branch : self::DEFAULT_BRANCH;
+    }
+
+    /**
+     * Run git in the project root; trimmed output, or null when git failed, printed
+     * nothing or is missing.
+     *
+     * @param list<string> $arguments
+     * @author michtio
+     */
+    private function git(string $root, array $arguments): ?string
+    {
+        try {
+            $process = new Process(['git', '-C', $root, ...$arguments]);
+            $process->setTimeout(30);
+            $process->run();
+        } catch (\Throwable) {
+            return null;
+        }
+
+        $output = trim($process->getOutput());
+
+        return $process->isSuccessful() && $output !== '' ? $output : null;
     }
 }

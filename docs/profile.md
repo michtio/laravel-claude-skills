@@ -98,7 +98,9 @@ Booleans must be JSON booleans and `phpstan_level` a JSON integer: `"false"`, `0
 - The plan shows them last, after every file diff and every other command, as `Extra step: <name>` followed by `Run: <command>`.
 - They run only after you confirm (or with `--yes`), never with `--check`, never when you decline. They run after every file is written and every other command ran, one by one, in order, as `sh -c <command>` from the project root.
 - A step that fails (non-zero exit) stops the run with exit code 1: later steps do not run, files already written stay written.
-- A step that ran is recorded in `.ai/claude-skills-setup.json` by its name and command. A rerun plans only steps that are not recorded: a new step, or one whose name or command changed. A failed step is not recorded, so the rerun plans it again. Removing a step plans nothing.
+- A step that ran is recorded by exact name and command in `.ai/claude-skills-setup.json`. A rerun plans only steps that are not recorded: a new step, or one whose name or command changed in any way, even by a space. A failed step is not recorded, so the rerun plans it again. Removing a step plans nothing.
+- So a team tool that updates other options must not rewrite the text of existing steps (reformat, re-quote, rename): any change to a step's name or command runs that step again.
+- A name is one line of plain text and a command plain text: control characters (a carriage return, an escape sequence, NUL and the like) are refused, so a step cannot hide what it runs. A command may hold tabs and newlines; a multi-line command is shown as one block under `Run:`. Steps recorded in `.ai/claude-skills-setup.json` are checked the same way, and a state file with such a step is refused.
 
 ## Package verdicts
 
@@ -115,9 +117,9 @@ The setup writes nothing for verdicts, so changing only a verdict leaves the pla
 
 ## CI workflow
 
-With `"laravel": {"ci": true}` the setup writes `.github/workflows/claude-skills-gate.yml`, for an application or a Testbench package, whatever the runner. The workflow runs the same gate command as your machine, `composer test` (the script the setup writes), after `composer install`, on every push and pull request, with read-only repository permissions. It never runs Pint, PHPStan or the test runner on its own: the gate is the one command.
+With `"laravel": {"ci": true}` the setup writes `.github/workflows/claude-skills-gate.yml`, for an application or a Testbench package, whatever the runner. The workflow runs the same gate command as your machine, `composer test` (the script the setup writes), after `composer install`, on every push to the default branch and on every pull request, with read-only repository permissions. The default branch is the one origin's HEAD points to, else git's `init.defaultBranch`, else `main` (also `main` outside a git repository). A newer run cancels an older one for the same pull request; runs on the default branch always finish. It never runs Pint, PHPStan or the test runner on its own: the gate is the one command.
 
-It also installs gitleaks (checksum verified), which the secret scan of `composer test` needs in CI, and, for an application whose suite runs on MySQL, MariaDB or PostgreSQL, starts a database service with the test database. The PHP version follows `config.platform.php` in `composer.json`, else the lowest version `require.php` allows.
+It also installs gitleaks (checksum verified), which the secret scan of `composer test` needs in CI, and, for an application whose suite runs on MySQL, MariaDB or PostgreSQL, starts a database service with the test database. The PHP version is the first of: `php_version` in `.ddev/config.yaml` (and its `config.*.yaml` overrides), `config.platform.php` in `composer.json`, the lowest version `require.php` allows, else 8.4. Each is reduced to X.Y.
 
 The setup owns the file like every file it writes: the plan shows it as a diff, a copy you changed is reported as `edited by hand: .github/workflows/claude-skills-gate.yml` and is only replaced after you confirm.
 
