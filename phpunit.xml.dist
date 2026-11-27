@@ -8,6 +8,9 @@
         <testsuite name="PHPStan">
             <directory suffix="Test.php">tests/PHPStan</directory>
         </testsuite>
+        <testsuite name="Setup">
+            <directory suffix="Test.php">tests/Setup</directory>
+        </testsuite>
     </testsuites>
     <source>
         <include>

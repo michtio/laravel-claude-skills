@@ -1,0 +1,4 @@
+#!/usr/bin/env php
+<?php
+
+// Fixture marker: a Laravel app has an artisan file at its root.
