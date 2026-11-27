@@ -157,7 +157,8 @@ class FreshPackageOnMysql(unittest.TestCase):
 
         self.assertEqual(r.returncode, 0, "composer test failed on a fresh package:\n" + out[-3000:])
         self.assertIn("DatabaseTest", out)
-        self.assertRegex(out, r"1 passed")
+        self.assertRegex(out, r"Tests:\s+\d+ passed")
+        self.assertNotRegex(out, r"\d+ failed")
         # the dev database was never touched
         r = ddev(["mysql", "-e", "SHOW TABLES FROM db"])
         self.assertNotIn("s9b_probe", plain(r.stdout))

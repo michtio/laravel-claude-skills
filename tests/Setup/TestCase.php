@@ -50,7 +50,7 @@ abstract class TestCase extends Orchestra
     /**
      * Copy a committed fixture ('app' or 'package') to a fresh temp dir.
      */
-    protected function project(string $fixture, bool $ddev = false): string
+    public function project(string $fixture, bool $ddev = false): string
     {
         $dir = sys_get_temp_dir().'/lcs-setup-'.bin2hex(random_bytes(6));
         $this->copyDir(__DIR__.'/../Fixtures/'.$fixture, $dir);

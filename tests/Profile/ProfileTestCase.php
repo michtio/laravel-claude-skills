@@ -29,7 +29,7 @@ abstract class ProfileTestCase extends TestCase
      *
      * @param array<string, mixed>|string $profile
      */
-    protected function writeProfile(string $dir, array|string $profile): void
+    public function writeProfile(string $dir, array|string $profile): void
     {
         $content = is_string($profile) ? $profile : json_encode($profile, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n";
 
