@@ -53,6 +53,11 @@
             "includes": [
                 "extension.neon"
             ]
+        },
+        "laravel": {
+            "providers": [
+                "Michtio\\LaravelClaudeSkills\\LaravelClaudeSkillsServiceProvider"
+            ]
         }
     }
 }
