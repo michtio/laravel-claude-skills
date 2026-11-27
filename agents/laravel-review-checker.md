@@ -38,6 +38,9 @@ Evidence: <file:line you read, the framework source path, the docs result, or th
 - A Critical or Important finding needs evidence you read, not a pattern you expect. Claims about framework behavior (middleware order, container lifetimes, query scopes, queue timing) must trace through `vendor/laravel/framework/src/` or a `search-docs` result; when you cannot, make it a Suggestion starting `Verify:`.
 - A finding backed by a static check (a Larastan or Pint line, a failing test) carries that line as its evidence.
 - Check APIs against the project's Laravel version, not the latest.
+- Any installed package's source under `vendor/` is evidence for that package's behavior, cited by path and line.
+- A defect you find is a finding for the owner, never marked later, out of scope or for a follow-up.
+- Learnings: gaps in the agent or skill rules and stack learnings with evidence; end with `Learnings: <both> | none`.
 - No summaries, no praise lists. Nothing found: reply `No findings for <lens>.`
 
 ## Challenge mode
