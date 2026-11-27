@@ -8,9 +8,95 @@ Work in progress. Nothing is released yet.
 
 The project setup (`claude-skills:setup`) reads an optional profile, `.ai/skills-profile.json`: see [docs/profile.md](docs/profile.md).
 
+## Install
+
+The order matters, and it differs a little per project kind. Each kind runs the setup, then `boost:install`, then the setup again. Boost's `boost:install` leaves `.mcp.json` reset to its own host command (`php artisan boost:mcp`), so the second setup run puts the runner's command back; `--check` then confirms nothing is left to change. The setup also creates an empty `CLAUDE.md` when the project has none: Boost writes its guidelines to `AGENTS.md` when `CLAUDE.md` is missing, and Claude Code would then never read them. The setup never edits a `CLAUDE.md` that exists.
+
+### Requiring the unreleased pack
+
+Until the first tag (`1.0.0-beta.1`) the pack is not on Packagist. Require it from GitHub through a VCS repository in `composer.json`:
+
+```json
+{
+    "repositories": [
+        {"type": "vcs", "url": "https://github.com/michtio/laravel-claude-skills"}
+    ],
+    "require-dev": {
+        "michtio/laravel-claude-skills": "dev-main"
+    }
+}
+```
+
+`composer.lock` pins the exact commit, so every clone and CI install the same one; `composer update michtio/laravel-claude-skills` moves it to the latest `main`. After the first release, require a version (`composer require --dev michtio/laravel-claude-skills`) and drop the repository block.
+
+### Boost without prompts
+
+`boost:install` asks with interactive prompts, which an agent shell cannot answer, and with `--no-interaction` on a first run it takes its choices from `boost.json`, which does not exist yet. Seed `boost.json` first, so Boost installs for Claude Code, includes this pack's skills and leaves the Laravel Cloud skill off:
+
+```json
+{"agents": ["claude_code"], "packages": ["michtio/laravel-claude-skills"], "cloud": false}
+```
+
+Then run `boost:install --guidelines --skills --mcp --no-interaction` in the steps below.
+
+### An app
+
+On DDEV:
+
+```sh
+ddev composer require --dev michtio/laravel-claude-skills
+ddev artisan claude-skills:setup
+ddev artisan boost:install
+ddev artisan claude-skills:setup
+ddev artisan claude-skills:setup --check
+```
+
+On the host:
+
+```sh
+composer require --dev michtio/laravel-claude-skills
+php artisan claude-skills:setup
+php artisan boost:install
+php artisan claude-skills:setup
+php artisan claude-skills:setup --check
+```
+
+On a DDEV project whose type is not `laravel`, use `ddev exec php artisan` instead of `ddev artisan`.
+
+### A Testbench package
+
+A package has no `artisan`: every command goes through `vendor/bin/testbench`. The package kind needs a `workbench/` directory, and `workbench:install --basic --devtool` creates it (without `--devtool` it writes only `testbench.yaml`). The workbench it writes is not Pint-clean, so format it once with `pint workbench`.
+
+```sh
+ddev composer require --dev michtio/laravel-claude-skills
+ddev exec php vendor/bin/testbench workbench:install --basic --devtool --no-interaction
+ddev exec vendor/bin/pint workbench
+ddev exec php vendor/bin/testbench claude-skills:setup
+ddev exec php vendor/bin/testbench boost:install
+ddev exec php vendor/bin/testbench claude-skills:setup
+ddev exec php vendor/bin/testbench claude-skills:setup --check
+```
+
+On the host, drop `ddev exec` (and use `composer` for `ddev composer`). Run `boost:install` only after the first setup: before it, Testbench's `base_path()` is its own `@testbench` skeleton in `vendor/`, and Boost writes its files there instead of into the package.
+
+### After the install
+
+The agents ship as a Claude Code plugin, separately from the skills. In Claude Code, run:
+
+```text
+/plugin marketplace add michtio/laravel-claude-skills
+/plugin install laravel-claude-skills@laravel-claude-skills
+```
+
+The setup prints these two commands on every run until the project's `.claude/settings.json` enables the plugin.
+
+When the DDEV PHP version changes (`php_version` in `.ddev/config.yaml`), rerun the setup and then `boost:update` (`ddev artisan boost:update`, or `ddev exec php vendor/bin/testbench boost:update` in a package): the setup refreshes the CI workflow, but Boost's guidelines in `CLAUDE.md` keep naming the old PHP version until Boost composes them again.
+
+A gated pull request (one that carries a `test(gate):` gate commit) merges with a merge commit, never a squash: a squash rewrites the slice into one new commit and removes the gate commit that the lock check compares against, so the gate can no longer be proven untouched.
+
 ## Agents
 
-The Claude Code plugin (`.claude-plugin/plugin.json`, from this repository's root) carries the agents. Skills ship through Boost, not through the plugin: install the Composer package and run `boost:install` so the agents find `laravel-pitfalls` and `laravel-package-verdicts` in `.claude/skills/`.
+The Claude Code plugin (`.claude-plugin/plugin.json`, from this repository's root) carries the agents: add it with `/plugin marketplace add michtio/laravel-claude-skills` and `/plugin install laravel-claude-skills@laravel-claude-skills` (see [After the install](#after-the-install)). Skills ship through Boost, not through the plugin: install the Composer package and run `boost:install` in the order of [Install](#install), so the agents find `laravel-pitfalls` and `laravel-package-verdicts` in `.claude/skills/`.
 
 | Agent | Model, effort | Starts | What it does |
 |---|---|---|---|
