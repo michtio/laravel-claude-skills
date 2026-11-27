@@ -93,7 +93,7 @@ Each option has a default; a value in the profile takes precedence over the defa
 | `php_matrix` | `auto`, or a list of `"X.Y"` strings | `auto` | The PHP versions the CI workflow tests on (see CI workflow below). |
 | `test_pins` | an object of pin name to value or `env` | `none` | Overrides single PHPUnit pins (see Test pins below). Isolation stays the default: every pin the profile does not name stays forced. |
 
-Booleans must be JSON booleans and `phpstan_level` a JSON integer: `"false"`, `0`, `null` or `"8"` are refused.
+An empty list, `"laravel": []` (what PHP's `json_encode` writes for an empty map), counts as no options set. Booleans must be JSON booleans and `phpstan_level` a JSON integer: `"false"`, `0`, `null` or `"8"` are refused.
 
 ### Test database
 
@@ -184,4 +184,6 @@ The profile is meant to be updated by a tool and the setup rerun to keep a repos
 Two files are created when they are missing and never touched again, whoever writes into them later:
 
 - `CLAUDE.md`, empty, when Claude Code is one of the agents (`boost.json` is missing or its `agents` lists `claude_code`): Boost writes its guidelines into `AGENTS.md` when `CLAUDE.md` does not exist. When `AGENTS.md` exists without `CLAUDE.md`, the setup says so and leaves `AGENTS.md` alone.
-- `tests/Pest.php` in a Testbench package, extending `Orchestra\Testbench\TestCase` for every test, so a fresh package has a suite to run.
+- `tests/Pest.php` in a Testbench package on Pest (`pestphp/pest` required) whose tests pick no base case yet (no `tests/TestCase.php`, no test file calling `uses(`), extending `Orchestra\Testbench\TestCase` for every test, so a fresh package has a suite to run.
+
+A symlinked `tests` folder in a Pest package, or a `CLAUDE.md` that is a dangling symlink or points outside the project, is refused like the setup's other files: exit 1, nothing written. A `CLAUDE.md` symlink to a file inside the project is left alone.

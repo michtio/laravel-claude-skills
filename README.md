@@ -37,7 +37,7 @@ Until the first tag (`1.0.0-beta.1`) the pack is not on Packagist. Require it fr
 {"agents": ["claude_code"], "packages": ["michtio/laravel-claude-skills"], "cloud": false}
 ```
 
-Then run `boost:install --guidelines --skills --mcp --no-interaction` in the steps below.
+The steps below run `boost:install --guidelines --skills --mcp --no-interaction`, which needs that seed. To answer Boost's prompts yourself instead, skip the seed and drop the flags from that line.
 
 ### An app
 
@@ -46,7 +46,7 @@ On DDEV:
 ```sh
 ddev composer require --dev michtio/laravel-claude-skills
 ddev artisan claude-skills:setup
-ddev artisan boost:install
+ddev artisan boost:install --guidelines --skills --mcp --no-interaction
 ddev artisan claude-skills:setup
 ddev artisan claude-skills:setup --check
 ```
@@ -56,7 +56,7 @@ On the host:
 ```sh
 composer require --dev michtio/laravel-claude-skills
 php artisan claude-skills:setup
-php artisan boost:install
+php artisan boost:install --guidelines --skills --mcp --no-interaction
 php artisan claude-skills:setup
 php artisan claude-skills:setup --check
 ```
@@ -72,7 +72,7 @@ ddev composer require --dev michtio/laravel-claude-skills
 ddev exec php vendor/bin/testbench workbench:install --basic --devtool --no-interaction
 ddev exec vendor/bin/pint workbench
 ddev exec php vendor/bin/testbench claude-skills:setup
-ddev exec php vendor/bin/testbench boost:install
+ddev exec php vendor/bin/testbench boost:install --guidelines --skills --mcp --no-interaction
 ddev exec php vendor/bin/testbench claude-skills:setup
 ddev exec php vendor/bin/testbench claude-skills:setup --check
 ```
@@ -90,7 +90,7 @@ The agents ship as a Claude Code plugin, separately from the skills. In Claude C
 
 The setup prints these two commands on every run until the project's `.claude/settings.json` enables the plugin.
 
-When the DDEV PHP version changes (`php_version` in `.ddev/config.yaml`), rerun the setup and then `boost:update` (`ddev artisan boost:update`, or `ddev exec php vendor/bin/testbench boost:update` in a package): the setup refreshes the CI workflow, but Boost's guidelines in `CLAUDE.md` keep naming the old PHP version until Boost composes them again.
+When the DDEV PHP version changes (`php_version` in `.ddev/config.yaml`), run `boost:update` (`ddev artisan boost:update`, or `ddev exec php vendor/bin/testbench boost:update` in a package): Boost's guidelines in `CLAUDE.md` keep naming the old PHP version until Boost composes them again. For an app with `"ci": true` and `"php_matrix": "auto"`, also rerun the setup: its CI workflow takes the PHP version from DDEV and refreshes it. A package matrix and a `php_matrix` list do not follow DDEV.
 
 A gated pull request (one that carries a `test(gate):` gate commit) merges with a merge commit, never a squash: a squash rewrites the slice into one new commit and removes the gate commit that the lock check compares against, so the gate can no longer be proven untouched.
 
