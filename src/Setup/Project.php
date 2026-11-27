@@ -37,6 +37,11 @@ final class Project
     public const MAX_IDENTIFIER = 63;
 
     /**
+     * The PostgreSQL version for a DDEV block that names postgres without a version.
+     */
+    public const POSTGRES_VERSION = '17';
+
+    /**
      * The suffix of the test database name.
      */
     public const TEST_SUFFIX = '_test';
@@ -55,7 +60,72 @@ final class Project
         public readonly Runner $runner,
         public readonly bool $ddevLaravelType = false,
         public readonly bool $ddevTestDatabase = false,
+        /** @var array{type: string, version: string}|null The resolved DDEV database of a package on the DDEV test database. */
+        public readonly ?array $ddevDatabase = null,
     ) {
+    }
+
+    /**
+     * The same project with the DDEV database resolved (type and version), for a
+     * package on the DDEV test database.
+     *
+     * @param array{type: string, version: string} $database
+     * @author michtio
+     */
+    public function withDdevDatabase(array $database): self
+    {
+        return new self($this->root, $this->kind, $this->runner, $this->ddevLaravelType, $this->ddevTestDatabase, $database);
+    }
+
+    /**
+     * Resolve the database a package on the DDEV test database runs: the
+     * `.ddev/config.yaml` block when it names type and version (postgres without a
+     * version keeps 17); otherwise the installed DDEV, through the source, for a
+     * missing block, or for the version of a block that names only the type (the
+     * same type only).
+     *
+     * @return array{type: string, version: string}
+     * @throws SetupException When the block names an unknown type, or the source
+     *                        cannot give what the block leaves out.
+     * @author michtio
+     */
+    public function resolveDdevDatabase(DdevDatabaseSource $source): array
+    {
+        $block = $this->ddevConfig()['database'] ?? null;
+        $type = is_array($block) && is_string($block['type'] ?? null) && $block['type'] !== '' ? $block['type'] : null;
+        $version = is_array($block) && (is_string($block['version'] ?? null) || is_int($block['version'] ?? null) || is_float($block['version'] ?? null))
+            ? (string) $block['version']
+            : null;
+
+        if ($type === null) {
+            $read = $source->read($this->root);
+
+            if ($read === null) {
+                throw new SetupException('laravel.test_database is ddev, but .ddev/config.yaml names no database and the installed DDEV could not be asked which one it runs. Add a database: block with type and version to .ddev/config.yaml (for example type: mariadb, version: "11.8"), then run the setup again. Nothing was written.');
+            }
+
+            return $read;
+        }
+
+        if (! in_array($type, DdevCliDatabaseSource::TYPES, true)) {
+            throw new SetupException('laravel.test_database is ddev, but the database: type '.$type.' in .ddev/config.yaml is not one the setup supports (mariadb, mysql, postgres). Nothing was written.');
+        }
+
+        if ($version !== null && $version !== '') {
+            return ['type' => $type, 'version' => $version];
+        }
+
+        if ($type === 'postgres') {
+            return ['type' => 'postgres', 'version' => self::POSTGRES_VERSION];
+        }
+
+        $read = $source->read($this->root);
+
+        if ($read === null || $read['type'] !== $type) {
+            throw new SetupException('laravel.test_database is ddev, but the database: block in .ddev/config.yaml names '.$type.' without a version, and the installed DDEV does not report a '.$type.' version for this project. Add version: to that block (for example version: "8.0"), then run the setup again. Nothing was written.');
+        }
+
+        return $read;
     }
 
     /**
@@ -164,8 +234,8 @@ final class Project
 
     /**
      * The database connection the suite should use. A package on the DDEV test
-     * database: the DDEV database type (mysql, mariadb, or pgsql for postgres;
-     * mariadb, DDEV's default, when the DDEV config names none). Otherwise DB_CONNECTION from .env,
+     * database: the resolved DDEV database type (mysql, mariadb, or pgsql for
+     * postgres; see resolveDdevDatabase()). Otherwise DB_CONNECTION from .env,
      * else .env.example, else mysql for a DDEV app and sqlite otherwise.
      *
      * @author michtio
@@ -173,7 +243,7 @@ final class Project
     public function dbConnection(): string
     {
         if ($this->ddevTestDatabase) {
-            $database = $this->ddevConfig()['database'] ?? null;
+            $database = $this->ddevDatabase ?? ($this->ddevConfig()['database'] ?? null);
             $type = is_array($database) && is_string($database['type'] ?? null) ? $database['type'] : 'mariadb';
 
             return match ($type) {

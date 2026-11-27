@@ -7,6 +7,7 @@ namespace Michtio\LaravelClaudeSkills\Console;
 use Illuminate\Console\Command;
 use Michtio\LaravelClaudeSkills\Profile\Profile;
 use Michtio\LaravelClaudeSkills\Profile\ProfileException;
+use Michtio\LaravelClaudeSkills\Setup\DdevDatabaseSource;
 use Michtio\LaravelClaudeSkills\Setup\FileChange;
 use Michtio\LaravelClaudeSkills\Setup\GitFiles;
 use Michtio\LaravelClaudeSkills\Setup\PathGuard;
@@ -160,6 +161,16 @@ final class SetupCommand extends Command
             $this->error('laravel.test_database is ddev, but this project does not run on DDEV (no .ddev/ directory, or laravel.runner is host): there is no DDEV database to test on. Set it to auto, or run the project on DDEV. Nothing was written.');
 
             return self::FAILURE;
+        }
+
+        if ($project->ddevTestDatabase) {
+            try {
+                $project = $project->withDdevDatabase($project->resolveDdevDatabase($this->laravel->make(DdevDatabaseSource::class)));
+            } catch (SetupException $exception) {
+                $this->error($exception->getMessage());
+
+                return self::FAILURE;
+            }
         }
 
         $phpstan = new PhpstanPlanner((int) $options['phpstan_level'], $profile->sets('phpstan_level'));

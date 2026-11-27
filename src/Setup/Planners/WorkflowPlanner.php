@@ -62,16 +62,6 @@ final class WorkflowPlanner implements Planner
     public const DEFAULT_PHP = '8.4';
 
     /**
-     * The version a package on the DDEV test database gets in CI for a block that
-     * names a type without a version (as ruled for S9b); postgres, which has no
-     * entry, uses the DATABASES default.
-     */
-    private const DDEV_VERSIONS = [
-        'mysql' => '8.0',
-        'mariadb' => '10.11',
-    ];
-
-    /**
      * Every PHP minor the setup knows, oldest first; the last is the latest a package
      * matrix reaches on `auto`.
      */
@@ -357,9 +347,9 @@ final class WorkflowPlanner implements Planner
 
     /**
      * The database type and version of `.ddev/config.yaml` (DDEV's default, MariaDB
-     * 10.11, when the file sets none; for a package on the DDEV test database, a type
-     * without a version gets DDEV's default version, so CI tests the engine and
-     * version the package tests on locally), or null without a DDEV config or for a type
+     * 10.11, when the file sets none; for a package on the DDEV test database, the
+     * resolved type and version, so CI tests the engine and version the package
+     * tests on locally), or null without a DDEV config or for a type
      * the workflow has no image for.
      *
      * @return array{0: string, 1: string}|null
@@ -369,6 +359,10 @@ final class WorkflowPlanner implements Planner
     {
         if (! is_file($project->root.'/.ddev/config.yaml')) {
             return null;
+        }
+
+        if ($project->ddevTestDatabase && $project->ddevDatabase !== null && isset(self::DATABASES[$project->ddevDatabase['type']])) {
+            return [$project->ddevDatabase['type'], $project->ddevDatabase['version']];
         }
 
         $config = $project->ddevConfig();
@@ -382,11 +376,7 @@ final class WorkflowPlanner implements Planner
         }
 
         if ($version === null || preg_match('/^[0-9][0-9.]*$/', $version) !== 1) {
-            $version = match (true) {
-                ! isset($database['type']) => '10.11',
-                $project->ddevTestDatabase && isset(self::DDEV_VERSIONS[$type]) => self::DDEV_VERSIONS[$type],
-                default => self::DATABASES[$type][1],
-            };
+            $version = isset($database['type']) ? self::DATABASES[$type][1] : '10.11';
         }
 
         return [$type, $version];
