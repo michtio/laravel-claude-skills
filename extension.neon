@@ -4,8 +4,14 @@
 #   includes:
 #       - vendor/michtio/laravel-claude-skills/extension.neon
 #
+# env() outside config is covered by Larastan (noEnvCallsOutsideOfConfig); the cast on env() is review only.
+#
 # Rules (each names its pitfall in its message):
 #   NoSideEffectInTransactionRule  laravel-pitfalls: transactions
+#   NoUnescapedLikeRule            laravel-pitfalls: edge-validation
+#   NoPayloadInLogRule             laravel-pitfalls: pii-logs
 
 rules:
     - Michtio\LaravelClaudeSkills\PHPStan\Rules\NoSideEffectInTransactionRule
+    - Michtio\LaravelClaudeSkills\PHPStan\Rules\NoUnescapedLikeRule
+    - Michtio\LaravelClaudeSkills\PHPStan\Rules\NoPayloadInLogRule
