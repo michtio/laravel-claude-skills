@@ -67,3 +67,7 @@ Where another guideline is silent or looser on docblocks, this section wins, and
 
 Before adding or recommending a Composer package, load the `laravel-package-verdicts` skill: it holds the package register (use, avoid or depends, with conditions), and the profile's own verdicts take precedence over it.
 @endif
+
+## Project files
+
+This project ships with its README, docs, CHANGELOG and LICENSE, each where it applies, and every slice that changes behavior updates them in the same change: the README and docs for what a user now does differently, a CHANGELOG entry under `## [Unreleased]`, and the LICENSE kept in place. Update them without waiting to be asked. This rule wins over Boost's foundation line "only create documentation files if explicitly requested": for these project files the request is standing, and that line does not apply to them.

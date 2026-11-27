@@ -25,11 +25,16 @@ abstract class ProfileTestCase extends TestCase
     public const STATE = '.ai/claude-skills-setup.json';
 
     /**
+     * The reader of DDEV's database (S9b round 4). The setup resolves it from the container; tests feed it values.
+     */
+    public const DDEV_SOURCE = 'Michtio\\LaravelClaudeSkills\\Setup\\DdevDatabaseSource';
+
+    /**
      * Write the profile file (an array is encoded as pretty JSON; a string is written as is).
      *
      * @param array<string, mixed>|string $profile
      */
-    protected function writeProfile(string $dir, array|string $profile): void
+    public function writeProfile(string $dir, array|string $profile): void
     {
         $content = is_string($profile) ? $profile : json_encode($profile, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n";
 
@@ -111,5 +116,52 @@ abstract class ProfileTestCase extends TestCase
         expect($code)->toBe(0);
 
         return $dir;
+    }
+
+    /**
+     * Run every test with a reader that reports DDEV's default database (mariadb 11.8), so a package on
+     * test_database ddev with no database block never shells out. Skipped while the interface does not exist.
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        if (interface_exists(self::DDEV_SOURCE)) {
+            $this->fakeDdevDatabase(['type' => 'mariadb', 'version' => '11.8']);
+        }
+    }
+
+    /**
+     * Bind a DdevDatabaseSource that returns $database (type and version, or null for unreadable), or throws when
+     * $database is false: the reader must then never be consulted.
+     *
+     * @param array{type: string, version: string}|null|false $database
+     */
+    public function fakeDdevDatabase(array|null|false $database): void
+    {
+        $this->app->instance(self::DDEV_SOURCE, $this->ddevSource($database));
+    }
+
+    /**
+     * A fresh anonymous implementation of the reader (declared lazily: the interface may not exist yet).
+     *
+     * @param array{type: string, version: string}|null|false $database
+     */
+    private function ddevSource(array|null|false $database): object
+    {
+        $interface = self::DDEV_SOURCE;
+
+        return eval('return new class($database) implements \\'.$interface.' {
+            public function __construct(private readonly array|null|false $database) {}
+
+            public function read(string $root): ?array
+            {
+                if ($this->database === false) {
+                    throw new \\RuntimeException("The DDEV database reader must not be consulted here.");
+                }
+
+                return $this->database;
+            }
+        };');
     }
 }

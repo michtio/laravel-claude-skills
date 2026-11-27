@@ -6,6 +6,8 @@ With no profile, the setup uses the documented defaults below and says so on eve
 
 ## Install and run
 
+The full install order per project kind (the setup, `boost:install`, the setup again), requiring the unreleased pack and the agents plugin are in the [README](../README.md#install).
+
 ```sh
 # DDEV
 ddev composer require --dev michtio/laravel-claude-skills
@@ -18,9 +20,9 @@ php artisan claude-skills:setup
 
 In a Testbench package, run `vendor/bin/testbench claude-skills:setup` (or `ddev exec vendor/bin/testbench claude-skills:setup`).
 
-The setup prints every change as a diff, every command it will run, and asks once. Options:
+Every run first prints what it detected, then every effective option with its source, `(profile)` or `(default)`, for example `  runner: ddev (profile)` and `  test_pins: none (default)`, and the two Claude Code commands that install the agents (until `.claude/settings.json` enables the plugin). The setup then prints every change as a diff, every command it will run, and asks once. Options:
 
-- `--check`: exit 1 when anything would change (a file, a command, a pending extra step), 0 when nothing would. It never asks, never writes and never runs anything. Use it in CI or from a team tool.
+- `--check`: exit 1 when anything would change (a file, a command, a pending extra step), 0 when nothing would. It never asks, never writes and never runs anything. Use it in CI or from a team tool. Under DDEV (`ddev artisan claude-skills:setup --check`), DDEV follows that expected exit 1 with its own red `Failed to execute command ... exit status 1` line: that is DDEV reporting the exit code, not a crash. The plan before it ends with `<N> changes planned.` (`1 change planned.` for one).
 - `--yes`: apply without asking.
 - `--path=<dir>`: the project root.
 
@@ -78,7 +80,7 @@ An invalid profile is refused before anything is planned: the setup exits 1 with
 
 ## Laravel options
 
-Each option has a default; a value in the profile takes precedence over the default. With no profile, the setup prints `No profile found at .ai/skills-profile.json; using the defaults:` and lists the five values. Any other key under `laravel` is kept, ignored and named in an `Ignoring unknown profile key` line.
+Each option has a default; a value in the profile takes precedence over the default. With no profile, the setup prints `No profile found at .ai/skills-profile.json; using the defaults:` and lists every option. Any other key under `laravel` is kept, ignored and named in an `Ignoring unknown profile key` line.
 
 | Option | Values | Default | Effect |
 |---|---|---|---|
@@ -87,8 +89,29 @@ Each option has a default; a value in the profile takes precedence over the defa
 | `phpstan_level` | integer `0` to `10` | `8` | The level of the `phpstan.neon` the setup writes (see PHPStan below). |
 | `monitoring` | `none`, `sentry`, `nightwatch` | `none` | `sentry` plans `composer require sentry/sentry-laravel`, `nightwatch` plans `composer require laravel/nightwatch`, through the runner (`ddev composer require ...` on DDEV). Not planned when the package is already in `require` or `require-dev`, and never for a Testbench package. `none` plans nothing, and the setup never removes a monitoring package. |
 | `ci` | `true`, `false` | `false` | `true` writes the CI workflow `.github/workflows/claude-skills-gate.yml` (below). Back to `false`, the setup deletes the workflow if it is still its own output. |
+| `test_database` | `auto`, `ddev` | `auto` | `ddev` gives a Testbench package on DDEV the test database an app on DDEV gets (see Test database below); for an app it changes nothing. `auto` keeps a package on in-memory sqlite. |
+| `php_matrix` | `auto`, or a list of `"X.Y"` strings | `auto` | The PHP versions the CI workflow tests on (see CI workflow below). |
+| `test_pins` | an object of pin name to value or `env` | `none` | Overrides single PHPUnit pins (see Test pins below). Isolation stays the default: every pin the profile does not name stays forced. |
 
-Booleans must be JSON booleans and `phpstan_level` a JSON integer: `"false"`, `0`, `null` or `"8"` are refused.
+An empty list, `"laravel": []` (what PHP's `json_encode` writes for an empty map), counts as no options set. Booleans must be JSON booleans and `phpstan_level` a JSON integer: `"false"`, `0`, `null` or `"8"` are refused.
+
+### Test database
+
+A Testbench package tests on in-memory sqlite by default. With `"test_database": "ddev"` a package on DDEV tests on DDEV's db service instead, as an app does: the setup writes the post-start hook in `.ddev/config.claude-skills.yaml` that creates `<slug>_test` (with a `web_environment` list for DDEV's host, port and credentials, since a package has no `.env` that names them), forces `DB_CONNECTION` (from the DDEV database type: `mysql`, `mariadb`, or `pgsql` for postgres) and `DB_DATABASE=<slug>_test` in `phpunit.xml.dist`, and gives the CI workflow a database service. Run `ddev restart` once so the hook creates the database.
+
+The engine and version come from the `database:` block of `.ddev/config.yaml` when it names both. When it names none, or only a type, the setup asks the installed DDEV (`ddev describe -j` for the project, inside the web container `DDEV_DATABASE`, else the default `ddev config --help` prints), so the pins, the hook and the CI service run what DDEV runs; a version-less block takes the version only when DDEV reports the same type. A version-less `postgres` block uses 17. When DDEV cannot tell, the setup exits 1 and asks for an explicit `database:` block in `.ddev/config.yaml`, writing nothing. When DDEV's default later moves, a rerun plans only the workflow (and the pins when the engine changes). `ddev` on a project that does not run on DDEV (no `.ddev/`, or `"runner": "host"`) is refused with exit 1, and nothing is written.
+
+### Test pins
+
+The setup forces the test environment in the PHPUnit file so the suite never reaches the dev database, a real mailer, queue or cache, or a live provider. `test_pins` overrides single pins and nothing else: only `SESSION_DRIVER`, `CACHE_STORE`, `QUEUE_CONNECTION` and `MAIL_MAILER` can be named. The database pins (`DB_CONNECTION`, `DB_DATABASE`, `DB_URL`), `APP_ENV` and the live-provider flags cannot be named, so isolation stays the default; naming one, or a value that is not plain letters, digits, `_`, `.` and `-`, is refused.
+
+```json
+"laravel": {"test_pins": {"CACHE_STORE": "redis", "SESSION_DRIVER": "env"}}
+```
+
+- A value, such as `redis`, replaces the standard one and stays forced (`force="true"`, with the `<server>` twin for `QUEUE_CONNECTION` and `MAIL_MAILER`).
+- `env` writes the pin without force and without a `<server>` twin, with the standard value as its default (`array`, `array`, `sync`, `array`), so a value the shell or `ddev exec env SESSION_DRIVER=file vendor/bin/pest` sets wins, and the default applies when nothing is set. Use it for a gate that runs the same tests under several drivers.
+- Changing or removing a pin plans only that line of the PHPUnit file; a rerun reports `No changes`.
 
 ## Extra setup steps
 
@@ -134,7 +157,7 @@ parameters:
         - routes
 ```
 
-- The paths are those of `app`, `config`, `database` and `routes` that exist, in that order; when none exists, `src` if it exists, else `app`. A Testbench package gets `src`.
+- The paths are those of `app`, `config`, `database` and `routes` that exist, in that order; when none exists, `src` if it exists, else `app`. A Testbench package gets those of `src`, `tests` and `workbench/app` that exist, in that order (`tests` also when the same run creates `tests/Pest.php`), so a fresh package with an empty `src` still has files to check and no missing path fails the gate.
 - If Larastan is not required yet, the plan adds `composer require --dev larastan/larastan` (`ddev composer require --dev larastan/larastan` on DDEV), run after the other commands and before the extra steps. Larastan is never removed.
 - An existing `phpstan.neon`, `phpstan.neon.dist` or `phpstan.dist.neon` that the setup did not write is never changed, and nothing is installed for it: the setup prints `Left alone: <file>` on every run. A `phpstan.neon` the setup wrote earlier is removed (if unchanged) once you add one of your own, so it cannot shadow yours.
 - The written file is owned like every setup file: a rerun reports `No changes`, and changing `phpstan_level` plans only that file. If you edit or replace it, the plan says `edited by hand: phpstan.neon` and `phpstan.neon: applying replaces your changes with level <n>`; nothing is written without your confirmation. To keep your own config, rename it to `phpstan.neon.dist` or `phpstan.dist.neon`: the setup then leaves it alone.
@@ -144,7 +167,9 @@ parameters:
 
 With `"laravel": {"ci": true}` the setup writes `.github/workflows/claude-skills-gate.yml`, for an application or a Testbench package, whatever the runner. The workflow runs the same gate command as your machine, `composer test` (the script the setup writes), after `composer install`, on every push to the default branch and on every pull request, with read-only repository permissions. The default branch is the one origin's HEAD points to, else git's `init.defaultBranch`, else `main` (also `main` outside a git repository). A newer run cancels an older one for the same pull request; runs on the default branch always finish. It never runs Pint, PHPStan or the test runner on its own: the gate is the one command.
 
-It also installs gitleaks (checksum verified), which the secret scan of `composer test` needs in CI, and, for an application whose suite runs on MySQL, MariaDB or PostgreSQL, starts a database service with the test database. The PHP version is the first of: `php_version` in `.ddev/config.yaml` (and its `config.*.yaml` overrides), `config.platform.php` in `composer.json`, the lowest version `require.php` allows, else 8.4. Each is reduced to X.Y.
+It also installs gitleaks (checksum verified), which the secret scan of `composer test` needs in CI, and, for a suite that runs on MySQL, MariaDB or PostgreSQL (an application, or a package with `"test_database": "ddev"`), starts a database service with the test database.
+
+The PHP versions follow `php_matrix`. A list runs the job once per version, as a matrix (`fail-fast: false`). With `auto`, the default, a package is tested on every PHP minor from the composer.json require.php floor (its lowest X.Y version) up to the latest the setup knows; the DDEV PHP version does not decide it. With `auto`, an application runs one version, the first of: `php_version` in `.ddev/config.yaml` (and its `config.*.yaml` overrides), `config.platform.php` in `composer.json`, the lowest version `require.php` allows, else 8.4, each reduced to X.Y. Changing the matrix plans only the workflow.
 
 The setup owns the file like every file it writes: the plan shows it as a diff, a copy you changed is reported as `edited by hand: .github/workflows/claude-skills-gate.yml` and is only replaced after you confirm.
 
@@ -152,6 +177,15 @@ The setup owns the file like every file it writes: the plan shows it as a diff, 
 
 The profile is meant to be updated by a tool and the setup rerun to keep a repository current. A rerun applies only the difference:
 
-- Changing one option plans only what follows from it: `ci` plans only the workflow; `phpstan_level` plans only `phpstan.neon`; `runner` plans only the runner-dependent files; `house_style` and `gate_tests` plan nothing.
+- Changing one option plans only what follows from it: `ci` and `php_matrix` plan only the workflow; `phpstan_level` plans only `phpstan.neon`; `test_pins` plans only the PHPUnit file; `test_database` plans the hook, the PHPUnit file and the workflow; `runner` plans only the runner-dependent files; `house_style` and `gate_tests` plan nothing.
 - Rewriting the profile with the same meaning (keys reordered, other formatting, `managed_by` added) plans nothing.
 - A rerun on an unchanged project reports `No changes` and `claude-skills:setup --check` exits 0.
+
+## Files created once
+
+Two files are created when they are missing and never touched again, whoever writes into them later:
+
+- `CLAUDE.md`, empty, when Claude Code is one of the agents (`boost.json` is missing or its `agents` lists `claude_code`): Boost writes its guidelines into `AGENTS.md` when `CLAUDE.md` does not exist. When `AGENTS.md` exists without `CLAUDE.md`, the setup says so and leaves `AGENTS.md` alone.
+- `tests/Pest.php` in a Testbench package on Pest (`pestphp/pest` required) whose tests pick no base case yet (no `tests/TestCase.php`, no test file calling `uses(`), extending `Orchestra\Testbench\TestCase` for every test, so a fresh package has a suite to run.
+
+A symlinked `tests` folder in a Pest package, or a `CLAUDE.md` that is a dangling symlink or points outside the project, is refused like the setup's other files: exit 1, nothing written. A `CLAUDE.md` symlink to a file inside the project is left alone.

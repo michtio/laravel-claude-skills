@@ -1,0 +1,15 @@
+{
+    "version": 1,
+    "laravel": {
+        "test_database": "ddev",
+        "ci": true,
+        "php_matrix": [
+            "8.3",
+            "8.4"
+        ],
+        "test_pins": {
+            "SESSION_DRIVER": "env",
+            "QUEUE_CONNECTION": "env"
+        }
+    }
+}

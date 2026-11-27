@@ -7,12 +7,14 @@ namespace Michtio\LaravelClaudeSkills\Console;
 use Illuminate\Console\Command;
 use Michtio\LaravelClaudeSkills\Profile\Profile;
 use Michtio\LaravelClaudeSkills\Profile\ProfileException;
+use Michtio\LaravelClaudeSkills\Setup\DdevDatabaseSource;
 use Michtio\LaravelClaudeSkills\Setup\FileChange;
 use Michtio\LaravelClaudeSkills\Setup\GitFiles;
 use Michtio\LaravelClaudeSkills\Setup\PathGuard;
 use Michtio\LaravelClaudeSkills\Setup\PlannedFile;
 use Michtio\LaravelClaudeSkills\Setup\Planners\ComposerScriptPlanner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\CoreOverridePlanner;
+use Michtio\LaravelClaudeSkills\Setup\Planners\CreatedOnceFilePlanner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\DdevDatabasePlanner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\HooksPathPlanner;
 use Michtio\LaravelClaudeSkills\Setup\Planners\LarastanPlanner;
@@ -90,6 +92,16 @@ final class SetupCommand extends Command
         SetupState::PATH,
     ];
 
+    /**
+     * The GitHub repository of the plugin marketplace that ships the agents.
+     */
+    private const MARKETPLACE = 'michtio/laravel-claude-skills';
+
+    /**
+     * The agents plugin, as `<plugin>@<marketplace>` in Claude Code's enabledPlugins.
+     */
+    private const PLUGIN = 'laravel-claude-skills@laravel-claude-skills';
+
     // Properties
     // =========================================================================
 
@@ -137,17 +149,41 @@ final class SetupCommand extends Command
             return self::FAILURE;
         }
 
-        $options = $profile->laravel();
+        $options = $profile->effective();
         $runner = $options['runner'] === 'auto' ? null : Runner::from((string) $options['runner']);
-        $project = Project::detect($root, $runner);
+        $ddevTestDatabase = $options['test_database'] === 'ddev';
+        $project = Project::detect($root, $runner, $ddevTestDatabase);
         $this->line('Detected: '.$project->kind->value);
         $this->line('Runner: '.$project->runner->value);
         $this->showProfile($profile);
+
+        if ($ddevTestDatabase && ! $project->usesDdev()) {
+            $this->error('laravel.test_database is ddev, but this project does not run on DDEV (no .ddev/ directory, or laravel.runner is host): there is no DDEV database to test on. Set it to auto, or run the project on DDEV. Nothing was written.');
+
+            return self::FAILURE;
+        }
+
+        if ($project->ddevTestDatabase) {
+            try {
+                $project = $project->withDdevDatabase($project->resolveDdevDatabase($this->laravel->make(DdevDatabaseSource::class)));
+            } catch (SetupException $exception) {
+                $this->error($exception->getMessage());
+
+                return self::FAILURE;
+            }
+        }
 
         $phpstan = new PhpstanPlanner((int) $options['phpstan_level'], $profile->sets('phpstan_level'));
 
         try {
             PathGuard::assertAllSafe($root, self::OWNED_PATHS);
+
+            // tests/Pest.php may be created in a Pest package; CLAUDE.md may be created, never written once it exists.
+            if ($project->isPackage() && $project->requires('pestphp/pest')) {
+                PathGuard::assertSafe($root, CreatedOnceFilePlanner::PEST);
+            }
+
+            PathGuard::assertLinkInside($root, CreatedOnceFilePlanner::CLAUDE_MD);
             $plan = SetupPlan::build(
                 $project,
                 [...$this->planners($profile), $phpstan],
@@ -169,11 +205,17 @@ final class SetupCommand extends Command
             $this->line($phpstanNotice);
         }
 
+        if (CreatedOnceFilePlanner::claudeMd()->creates($project) && file_exists($root.'/AGENTS.md')) {
+            $this->warn('AGENTS.md exists but CLAUDE.md does not: the setup creates an empty CLAUDE.md, so Boost writes its guidelines there and Claude Code reads them. AGENTS.md is left alone.');
+        }
+
         $databaseNotice = (new DdevDatabasePlanner())->notice($project);
 
         if ($databaseNotice !== null) {
             $this->warn($databaseNotice);
         }
+
+        $this->showAgentsInstall($root);
 
         if ($plan->isEmpty()) {
             $this->info('No changes.');
@@ -196,11 +238,13 @@ final class SetupCommand extends Command
             $this->commandLine('Run: ', $step['command']);
         }
 
-        $count = count($plan->changes) + count($plan->actions) + count($plan->steps);
-        $summary = $count === 1 ? '1 change' : $count.' changes';
+        // The state file only records the others: it counts when it is the one change.
+        $files = array_filter($plan->changes, static fn (FileChange $change): bool => $change->path !== SetupState::PATH);
+        $count = max(1, count($files) + count($plan->actions) + count($plan->steps));
+        $summary = $count === 1 ? '1 change planned.' : $count.' changes planned.';
 
         if ($this->option('check')) {
-            $this->line($summary.' would change. Run claude-skills:setup to apply.');
+            $this->line($summary.' Run claude-skills:setup to apply.');
 
             return self::FAILURE;
         }
@@ -218,32 +262,80 @@ final class SetupCommand extends Command
     // =========================================================================
 
     /**
-     * State where the options come from: the profile file, or the defaults, listed.
-     * Unknown keys under `laravel` are named, so a typo is not silent.
+     * State where the options come from and list every effective option with its
+     * source, `(profile)` or `(default)`, on every run. Unknown keys under `laravel`
+     * are named, so a typo is not silent.
      *
      * @author michtio
      */
     private function showProfile(Profile $profile): void
     {
-        if (! $profile->exists()) {
+        if ($profile->exists()) {
+            $this->line('Profile: '.Profile::PATH);
+        } else {
             $this->line('No profile found at '.Profile::PATH.'; using the defaults:');
-
-            foreach ($profile->laravel() as $key => $value) {
-                $this->line('  '.$key.': '.match (true) {
-                    is_bool($value) => $value ? 'true' : 'false',
-                    is_scalar($value) => (string) $value,
-                    default => '',
-                });
-            }
-
-            return;
         }
 
-        $this->line('Profile: '.Profile::PATH);
+        foreach ($profile->effective() as $key => $value) {
+            $source = $profile->sets($key) ? 'profile' : 'default';
+            $this->line(OutputFormatter::escape('  '.$key.': '.$this->optionValue($key, $value).' ('.$source.')'));
+        }
 
         foreach ($profile->unknownLaravelKeys() as $key) {
             $this->warn(OutputFormatter::escape('Ignoring unknown profile key: laravel.'.$key));
         }
+    }
+
+    /**
+     * An option's value as printed: booleans as true/false, a PHP matrix list joined
+     * by commas, the test pins as NAME=value (or `none`).
+     *
+     * @author michtio
+     */
+    private function optionValue(string $key, mixed $value): string
+    {
+        if ($key === 'test_pins') {
+            if (! is_array($value) || $value === []) {
+                return 'none';
+            }
+
+            return implode(', ', array_map(
+                static fn (string|int $name, mixed $pin): string => $name.'='.(is_scalar($pin) ? (string) $pin : ''),
+                array_keys($value),
+                $value,
+            ));
+        }
+
+        return match (true) {
+            is_bool($value) => $value ? 'true' : 'false',
+            is_array($value) => implode(', ', array_map(static fn (mixed $item): string => is_scalar($item) ? (string) $item : '', $value)),
+            is_scalar($value) => (string) $value,
+            default => '',
+        };
+    }
+
+    /**
+     * Print the two Claude Code commands that install this pack's agents, unless the
+     * project's `.claude/settings.json` already enables the plugin. Printed text only:
+     * the setup never writes Claude Code's settings.
+     *
+     * @author michtio
+     */
+    private function showAgentsInstall(string $root): void
+    {
+        $settings = PlannedFile::read($root, '.claude/settings.json');
+        $decoded = $settings === null ? null : json_decode($settings, true);
+        $enabled = is_array($decoded) && is_array($decoded['enabledPlugins'] ?? null)
+            ? ($decoded['enabledPlugins'][self::PLUGIN] ?? null)
+            : null;
+
+        if ($enabled === true) {
+            return;
+        }
+
+        $this->line('The agents (builder, gate writer, reviewers) ship as a Claude Code plugin. In Claude Code, run:');
+        $this->line('  /plugin marketplace add '.self::MARKETPLACE);
+        $this->line('  /plugin install '.self::PLUGIN);
     }
 
     /**
@@ -254,11 +346,14 @@ final class SetupCommand extends Command
      */
     private function planners(Profile $profile): array
     {
+        $options = $profile->effective();
+        $testPins = is_array($options['test_pins']) ? array_map('strval', $options['test_pins']) : [];
         $planners = [
+            CreatedOnceFilePlanner::claudeMd(),
             new McpPlanner(),
             new RunnerGuidelinePlanner(),
             new CoreOverridePlanner(),
-            new PhpunitPlanner(),
+            new PhpunitPlanner($testPins),
             new ComposerScriptPlanner(),
             new DdevDatabasePlanner(),
             new StaticFilePlanner(GitFiles::COMMIT_MSG, GitFiles::commitMsg(), true),
@@ -271,7 +366,8 @@ final class SetupCommand extends Command
             $planners[] = new StaticFilePlanner($path, GitFiles::IGNORE_ALL, false, static fn (Project $project): bool => $project->isPackage());
         }
 
-        $planners[] = new WorkflowPlanner($profile->laravel()['ci'] === true);
+        $planners[] = CreatedOnceFilePlanner::pest();
+        $planners[] = new WorkflowPlanner($options['ci'] === true, is_array($options['php_matrix']) ? array_values(array_map('strval', $options['php_matrix'])) : 'auto');
 
         return $planners;
     }

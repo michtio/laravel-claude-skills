@@ -18,7 +18,10 @@ use Michtio\LaravelClaudeSkills\Setup\SetupState;
  * project gets nothing, so the pack stays unopinionated about PHPStan.
  *
  * Paths: for an app, those of app, config, database and routes that exist, in that
- * order; when none does, src if it exists, else app. For a Testbench package, src.
+ * order; when none does, src if it exists, else app. For a Testbench package, those
+ * of src, tests and workbench/app that exist, in that order, tests included when
+ * this run creates tests/Pest.php: a fresh Pest package with an empty src still has
+ * files to check, and no path that is missing fails the gate.
  *
  * With phpstan/extension-installer required, the file has no includes: the
  * installer already includes Larastan's and this pack's extensions, and a second
@@ -208,7 +211,11 @@ final class PhpstanPlanner implements Planner
     private function paths(Project $project): array
     {
         if ($project->isPackage()) {
-            return ['src'];
+            return array_values(array_filter(
+                ['src', 'tests', 'workbench/app'],
+                static fn (string $path): bool => is_dir($project->root.'/'.$path)
+                    || ($path === 'tests' && CreatedOnceFilePlanner::pest()->creates($project)),
+            ));
         }
 
         $paths = array_values(array_filter(self::APP_PATHS, static fn (string $path): bool => is_dir($project->root.'/'.$path)));

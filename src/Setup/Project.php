@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Michtio\LaravelClaudeSkills\Setup;
 
+use Symfony\Component\Yaml\Yaml;
+
 /**
  * The project the setup runs against: its root, its kind and its runner, and the
  * command forms that follow from them.
@@ -18,6 +20,10 @@ namespace Michtio\LaravelClaudeSkills\Setup;
  * `ddev artisan` for projects of type laravel, so other DDEV project types get
  * `ddev exec php artisan`.
  *
+ * A package normally tests on in-memory sqlite. With the profile's
+ * `laravel.test_database: ddev` a package on DDEV tests on DDEV's db service
+ * instead, as an app does: its connection follows the DDEV database type.
+ *
  * @author michtio
  */
 final class Project
@@ -29,6 +35,11 @@ final class Project
      * The longest identifier PostgreSQL keeps (MySQL allows 64): the limit for the test database name.
      */
     public const MAX_IDENTIFIER = 63;
+
+    /**
+     * The PostgreSQL version for a DDEV block that names postgres without a version.
+     */
+    public const POSTGRES_VERSION = '17';
 
     /**
      * The suffix of the test database name.
@@ -48,25 +59,95 @@ final class Project
         public readonly Kind $kind,
         public readonly Runner $runner,
         public readonly bool $ddevLaravelType = false,
+        public readonly bool $ddevTestDatabase = false,
+        /** @var array{type: string, version: string}|null The resolved DDEV database of a package on the DDEV test database. */
+        public readonly ?array $ddevDatabase = null,
     ) {
+    }
+
+    /**
+     * The same project with the DDEV database resolved (type and version), for a
+     * package on the DDEV test database.
+     *
+     * @param array{type: string, version: string} $database
+     * @author michtio
+     */
+    public function withDdevDatabase(array $database): self
+    {
+        return new self($this->root, $this->kind, $this->runner, $this->ddevLaravelType, $this->ddevTestDatabase, $database);
+    }
+
+    /**
+     * Resolve the database a package on the DDEV test database runs: the
+     * `.ddev/config.yaml` block when it names type and version (postgres without a
+     * version keeps 17); otherwise the installed DDEV, through the source, for a
+     * missing block, or for the version of a block that names only the type (the
+     * same type only).
+     *
+     * @return array{type: string, version: string}
+     * @throws SetupException When the block names an unknown type, or the source
+     *                        cannot give what the block leaves out.
+     * @author michtio
+     */
+    public function resolveDdevDatabase(DdevDatabaseSource $source): array
+    {
+        $block = $this->ddevConfig()['database'] ?? null;
+        $type = is_array($block) && is_string($block['type'] ?? null) && $block['type'] !== '' ? $block['type'] : null;
+        $version = is_array($block) && (is_string($block['version'] ?? null) || is_int($block['version'] ?? null) || is_float($block['version'] ?? null))
+            ? (string) $block['version']
+            : null;
+
+        if ($type === null) {
+            $read = $source->read($this->root);
+
+            if ($read === null) {
+                throw new SetupException('laravel.test_database is ddev, but .ddev/config.yaml names no database and the installed DDEV could not be asked which one it runs. Add a database: block with type and version to .ddev/config.yaml (for example type: mariadb, version: "11.8"), then run the setup again. Nothing was written.');
+            }
+
+            return $read;
+        }
+
+        if (! in_array($type, DdevCliDatabaseSource::TYPES, true)) {
+            throw new SetupException('laravel.test_database is ddev, but the database: type '.$type.' in .ddev/config.yaml is not one the setup supports (mariadb, mysql, postgres). Nothing was written.');
+        }
+
+        if ($version !== null && $version !== '') {
+            return ['type' => $type, 'version' => $version];
+        }
+
+        if ($type === 'postgres') {
+            return ['type' => 'postgres', 'version' => self::POSTGRES_VERSION];
+        }
+
+        $read = $source->read($this->root);
+
+        if ($read === null || $read['type'] !== $type) {
+            throw new SetupException('laravel.test_database is ddev, but the database: block in .ddev/config.yaml names '.$type.' without a version, and the installed DDEV does not report a '.$type.' version for this project. Add version: to that block (for example version: "8.0"), then run the setup again. Nothing was written.');
+        }
+
+        return $read;
     }
 
     /**
      * Detect kind and runner for the project at the given root. A runner passed in
      * (the profile's `laravel.runner`, when not `auto`) wins over detection.
+     * `$ddevTestDatabase` (the profile's `laravel.test_database: ddev`) moves a
+     * package on DDEV to the DDEV test database; it changes nothing for an app.
      *
      * @author michtio
      */
-    public static function detect(string $root, ?Runner $runner = null): self
+    public static function detect(string $root, ?Runner $runner = null, bool $ddevTestDatabase = false): self
     {
         $root = rtrim($root, '/\\');
         $ddev = $runner === null ? is_dir($root.'/.ddev') : $runner === Runner::Ddev;
+        $kind = self::hasTestbench($root) && is_dir($root.'/workbench') ? Kind::Package : Kind::App;
 
         return new self(
             $root,
-            self::hasTestbench($root) && is_dir($root.'/workbench') ? Kind::Package : Kind::App,
+            $kind,
             $ddev ? Runner::Ddev : Runner::Host,
             $ddev && self::ddevType($root) === 'laravel',
+            $ddevTestDatabase && $ddev && $kind === Kind::Package,
         );
     }
 
@@ -152,13 +233,26 @@ final class Project
     }
 
     /**
-     * The database connection the suite should use: DB_CONNECTION from .env, else
-     * .env.example, else mysql for a DDEV app and sqlite otherwise.
+     * The database connection the suite should use. A package on the DDEV test
+     * database: the resolved DDEV database type (mysql, mariadb, or pgsql for
+     * postgres; see resolveDdevDatabase()). Otherwise DB_CONNECTION from .env,
+     * else .env.example, else mysql for a DDEV app and sqlite otherwise.
      *
      * @author michtio
      */
     public function dbConnection(): string
     {
+        if ($this->ddevTestDatabase) {
+            $database = $this->ddevDatabase ?? ($this->ddevConfig()['database'] ?? null);
+            $type = is_array($database) && is_string($database['type'] ?? null) ? $database['type'] : 'mariadb';
+
+            return match ($type) {
+                'mysql' => 'mysql',
+                'postgres' => 'pgsql',
+                default => 'mariadb',
+            };
+        }
+
         $env = $this->envValues();
 
         if (isset($env['DB_CONNECTION']) && $env['DB_CONNECTION'] !== '') {
@@ -169,13 +263,49 @@ final class Project
     }
 
     /**
-     * Whether the suite runs on in-memory sqlite (a package, or an sqlite connection).
+     * Whether the suite runs on in-memory sqlite (a package not on the DDEV test
+     * database, or an sqlite connection).
      *
      * @author michtio
      */
     public function usesMemoryDatabase(): bool
     {
-        return $this->isPackage() || $this->dbConnection() === 'sqlite';
+        return ($this->isPackage() && ! $this->ddevTestDatabase) || $this->dbConnection() === 'sqlite';
+    }
+
+    /**
+     * The DDEV project config: `.ddev/config.yaml` with the `.ddev/config.*.yaml`
+     * overrides merged over it in name order, as DDEV merges them. Empty without a
+     * DDEV config; a file that does not parse is skipped.
+     *
+     * @return array<mixed>
+     * @author michtio
+     */
+    public function ddevConfig(): array
+    {
+        $main = $this->root.'/.ddev/config.yaml';
+
+        if (! is_file($main)) {
+            return [];
+        }
+
+        $files = glob($this->root.'/.ddev/config.*.yaml') ?: [];
+        sort($files);
+        $config = [];
+
+        foreach ([$main, ...$files] as $file) {
+            try {
+                $parsed = Yaml::parse((string) file_get_contents($file));
+            } catch (\Throwable) {
+                continue;
+            }
+
+            if (is_array($parsed)) {
+                $config = array_replace_recursive($config, $parsed);
+            }
+        }
+
+        return $config;
     }
 
     /**

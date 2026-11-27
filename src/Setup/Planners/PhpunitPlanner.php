@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Michtio\LaravelClaudeSkills\Setup\Planners;
 
+use Michtio\LaravelClaudeSkills\Profile\ProfileValidator;
 use Michtio\LaravelClaudeSkills\Setup\JsonFile;
 use Michtio\LaravelClaudeSkills\Setup\PlannedFile;
 use Michtio\LaravelClaudeSkills\Setup\Project;
@@ -37,6 +38,13 @@ use Michtio\LaravelClaudeSkills\Setup\SetupException;
  * `<server name="X" value="v"/>` twin: Laravel reads $_SERVER first, and a forced
  * `<env>` cannot beat a variable the process already carries, such as one
  * `testbench package:test` passes on from a package's .env.
+ *
+ * The profile's `laravel.test_pins` overrides single pins (SESSION_DRIVER,
+ * CACHE_STORE, QUEUE_CONNECTION, MAIL_MAILER): a value replaces the standard one,
+ * still forced, with its `<server>` twin; `env` writes the pin without force and
+ * without a twin, the standard value as the default, so a value the shell sets
+ * (`ddev exec env NAME=value ...`) wins. A twin left from an earlier value is
+ * removed. Every other pin stays forced.
  *
  * Hand edits: the fingerprint covers the owned elements present in the file. An
  * unrecorded file is edited by hand when an owned element is already forced (or,
@@ -74,6 +82,16 @@ final class PhpunitPlanner implements Planner
     // =========================================================================
 
     /**
+     * Take the profile's `laravel.test_pins`.
+     *
+     * @param array<string, string> $testPins Pin name => value, or `env` for an unforced pin.
+     * @author michtio
+     */
+    public function __construct(private readonly array $testPins = [])
+    {
+    }
+
+    /**
      * Plan the PHPUnit file with the pins for the project.
      *
      * @throws SetupException When the existing PHPUnit file is not well-formed XML.
@@ -84,16 +102,22 @@ final class PhpunitPlanner implements Planner
         $path = $this->path($project);
         $current = PlannedFile::read($project->root, $path);
         $present = $current === null ? [] : $this->presentElements($path, $current);
-        $elements = $this->elements($this->pins($project, $present));
+        $pins = $this->pins($project, $present);
+        $unforced = $this->unforced();
+        // Every element the pins can own, in the order of a file without overrides, so
+        // the fingerprint is the same whichever pins the profile leaves unforced.
+        $candidates = $this->elements($pins);
+        $elements = $this->elements($pins, $unforced);
+        $dropped = array_values(array_diff(array_keys($candidates), array_keys($elements)));
 
         $desired = $current === null
             ? $this->newFile($project, $elements)
-            : $this->merge($current, $elements);
+            : $this->merge($current, $elements, $dropped);
 
-        // Both maps in element order, so the fingerprint never depends on the file's element order.
+        // Both maps in candidate order, so the fingerprint never depends on the file's element order.
         $owned = [];
 
-        foreach (array_keys($elements) as $key) {
+        foreach (array_keys($candidates) as $key) {
             if (isset($present[$key])) {
                 $owned[$key] = $present[$key];
             }
@@ -102,14 +126,16 @@ final class PhpunitPlanner implements Planner
         $wanted = [];
         $forcedElsewhere = false;
 
-        foreach ($elements as $key => [$tag, , $value]) {
-            $wanted[$key] = [$value, $tag === 'env' ? 'true' : null];
+        foreach ($elements as $key => [$tag, , $value, $forced]) {
+            $wanted[$key] = [$value, $tag === 'env' && $forced ? 'true' : null];
         }
 
+        // A twin the setup no longer writes (its pin is `env`) counts too: one holding
+        // the standard value is removed quietly, any other value was set by hand.
         foreach ($owned as $key => [$value, $force]) {
-            $forced = $elements[$key][0] === 'server' || ($force !== null && strtolower($force) === 'true');
+            $forced = $candidates[$key][0] === 'server' || ($force !== null && strtolower($force) === 'true');
 
-            if ($forced && $value !== $elements[$key][2]) {
+            if ($forced && $value !== $candidates[$key][2]) {
                 $forcedElsewhere = true;
             }
         }
@@ -151,6 +177,12 @@ final class PhpunitPlanner implements Planner
     {
         $pins = self::STANDARD_PINS;
 
+        foreach ($this->testPins as $name => $value) {
+            if (array_key_exists($name, $pins) && $value !== ProfileValidator::PIN_FROM_ENV) {
+                $pins[$name] = $value;
+            }
+        }
+
         if ($project->usesMemoryDatabase()) {
             $pins['DB_CONNECTION'] = 'sqlite';
             $pins['DB_DATABASE'] = ':memory:';
@@ -181,6 +213,17 @@ final class PhpunitPlanner implements Planner
 
     // Private Methods
     // =========================================================================
+
+    /**
+     * The pins the profile marks `env`: written without force and without a twin.
+     *
+     * @return list<string>
+     * @author michtio
+     */
+    private function unforced(): array
+    {
+        return array_keys(array_filter($this->testPins, static fn (string $value): bool => $value === ProfileValidator::PIN_FROM_ENV));
+    }
 
     /**
      * Whether a key is a live-provider flag.
@@ -229,24 +272,26 @@ final class PhpunitPlanner implements Planner
     }
 
     /**
-     * The owned elements for the pins: a forced `<env>` for each, and a `<server>`
-     * twin for those in SERVER_TWINS and the live flags.
+     * The owned elements for the pins: an `<env>` for each (forced unless it is in
+     * $unforced), and a `<server>` twin for the forced ones in SERVER_TWINS and the
+     * live flags.
      *
      * @param array<string, string> $pins
-     * @return array<string, array{0: string, 1: string, 2: string}> "tag:NAME" => [tag, name, value], in write order.
+     * @param list<string> $unforced Pins written without force and without a twin.
+     * @return array<string, array{0: string, 1: string, 2: string, 3: bool}> "tag:NAME" => [tag, name, value, forced], in write order.
      * @author michtio
      */
-    private function elements(array $pins): array
+    private function elements(array $pins, array $unforced = []): array
     {
         $elements = [];
 
         foreach ($pins as $name => $value) {
-            $elements['env:'.$name] = ['env', $name, $value];
+            $elements['env:'.$name] = ['env', $name, $value, ! in_array($name, $unforced, true)];
         }
 
         foreach ($pins as $name => $value) {
-            if (in_array($name, self::SERVER_TWINS, true) || self::isLiveFlag($name)) {
-                $elements['server:'.$name] = ['server', $name, $value];
+            if ((in_array($name, self::SERVER_TWINS, true) || self::isLiveFlag($name)) && ! in_array($name, $unforced, true)) {
+                $elements['server:'.$name] = ['server', $name, $value, true];
             }
         }
 
@@ -258,19 +303,21 @@ final class PhpunitPlanner implements Planner
      *
      * @author michtio
      */
-    private function element(string $tag, string $name, string $value): string
+    private function element(string $tag, string $name, string $value, bool $forced = true): string
     {
         $value = htmlspecialchars($value, ENT_XML1 | ENT_QUOTES);
 
-        return $tag === 'env'
-            ? sprintf('<env name="%s" value="%s" force="true"/>', $name, $value)
-            : sprintf('<server name="%s" value="%s"/>', $name, $value);
+        return match (true) {
+            $tag === 'server' => sprintf('<server name="%s" value="%s"/>', $name, $value),
+            $forced => sprintf('<env name="%s" value="%s" force="true"/>', $name, $value),
+            default => sprintf('<env name="%s" value="%s"/>', $name, $value),
+        };
     }
 
     /**
      * A complete PHPUnit configuration for a project without one.
      *
-     * @param array<string, array{0: string, 1: string, 2: string}> $elements
+     * @param array<string, array{0: string, 1: string, 2: string, 3: bool}> $elements
      * @author michtio
      */
     private function newFile(Project $project, array $elements): string
@@ -302,8 +349,8 @@ final class PhpunitPlanner implements Planner
         $lines[] = '    </source>';
         $lines[] = '    <php>';
 
-        foreach ($elements as [$tag, $name, $value]) {
-            $lines[] = '        '.$this->element($tag, $name, $value);
+        foreach ($elements as [$tag, $name, $value, $forced]) {
+            $lines[] = '        '.$this->element($tag, $name, $value, $forced);
         }
 
         $lines[] = '    </php>';
@@ -314,13 +361,15 @@ final class PhpunitPlanner implements Planner
 
     /**
      * Merge the pins into existing content as text: replace each owned element in
-     * place, drop later duplicates of it, append the missing ones to `<php>`. XML
-     * comments are left byte-identical and never count as elements.
+     * place, drop later duplicates of it, append the missing ones to `<php>`, and
+     * remove the dropped ones (twins of pins that became `env`). XML comments are
+     * left byte-identical and never count as elements.
      *
-     * @param array<string, array{0: string, 1: string, 2: string}> $elements
+     * @param array<string, array{0: string, 1: string, 2: string, 3: bool}> $elements
+     * @param list<string> $dropped "tag:NAME" keys of elements the setup no longer writes.
      * @author michtio
      */
-    private function merge(string $content, array $elements): string
+    private function merge(string $content, array $elements, array $dropped = []): string
     {
         // XML comments are never edited: each is swapped for a placeholder no element
         // pattern can match, and put back byte for byte at the end.
@@ -335,7 +384,7 @@ final class PhpunitPlanner implements Planner
             $content,
         );
 
-        $merged = $this->mergeElements($content, $elements);
+        $merged = $this->mergeElements($content, $elements, $dropped);
 
         return (string) preg_replace_callback(
             '/\0LCS_COMMENT_(\d+)\0/',
@@ -347,10 +396,11 @@ final class PhpunitPlanner implements Planner
     /**
      * Merge the pins into content whose comments are already masked.
      *
-     * @param array<string, array{0: string, 1: string, 2: string}> $elements
+     * @param array<string, array{0: string, 1: string, 2: string, 3: bool}> $elements
+     * @param list<string> $dropped "tag:NAME" keys of elements to remove.
      * @author michtio
      */
-    private function mergeElements(string $content, array $elements): string
+    private function mergeElements(string $content, array $elements, array $dropped = []): string
     {
         $eol = str_contains($content, "\r\n") ? "\r\n" : "\n";
 
@@ -387,22 +437,27 @@ final class PhpunitPlanner implements Planner
         $indent = preg_match('/^([ \t]*)<env\b/m', $body, $match) === 1 ? $match[1] : $phpIndent.'    ';
         $missing = [];
 
-        foreach ($elements as [$tag, $name, $value]) {
-            $pattern = '/<'.$tag.'\b(?=[^>]*\bname=(["\'])'.preg_quote($name, '/').'\1)[^>]*?(?:\/>|>\s*<\/'.$tag.'>)/';
+        foreach ($dropped as $key) {
+            [$tag, $name] = explode(':', $key, 2);
+            $body = (string) preg_replace($this->pattern($tag, $name), '___LCS_DROP___', $body);
+            $body = (string) preg_replace('/\R?[ \t]*___LCS_DROP___/', '', $body);
+        }
+
+        foreach ($elements as [$tag, $name, $value, $forced]) {
             $count = 0;
             $body = (string) preg_replace_callback(
-                $pattern,
-                function () use (&$count, $tag, $name, $value): string {
+                $this->pattern($tag, $name),
+                function () use (&$count, $tag, $name, $value, $forced): string {
                     $count++;
 
-                    return $count === 1 ? $this->element($tag, $name, $value) : '___LCS_DROP___';
+                    return $count === 1 ? $this->element($tag, $name, $value, $forced) : '___LCS_DROP___';
                 },
                 $body,
             );
             $body = (string) preg_replace('/\R?[ \t]*___LCS_DROP___/', '', $body);
 
             if ($count === 0) {
-                $missing[] = $indent.$this->element($tag, $name, $value);
+                $missing[] = $indent.$this->element($tag, $name, $value, $forced);
             }
         }
 
@@ -413,6 +468,16 @@ final class PhpunitPlanner implements Planner
         }
 
         return substr($content, 0, $start).$body.substr($content, $end);
+    }
+
+    /**
+     * The pattern that matches an element of this tag and name, self-closing or empty.
+     *
+     * @author michtio
+     */
+    private function pattern(string $tag, string $name): string
+    {
+        return '/<'.$tag.'\b(?=[^>]*\bname=(["\'])'.preg_quote($name, '/').'\1)[^>]*?(?:\/>|>\s*<\/'.$tag.'>)/';
     }
 
     /**
