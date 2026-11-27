@@ -27,6 +27,23 @@ def text(stem: str) -> str:
 QUOTED_PIPE_FILTER = r"ddev exec \"vendor/bin/pest --filter='[^'\"]*\|"
 
 
+def assert_pest_exit_rule(test: unittest.TestCase, stem: str) -> None:
+    """Round 2 amendment (F1). PHPUnit exits 2 when a run has errors (ShellExitCodeCalculator::EXCEPTION_EXIT,
+    vendor/phpunit/phpunit/src/TextUI/ShellExitCodeCalculator.php, PHPUnit 13.4.7), so exit 2 with a result line
+    is a fail, not a broken run. Exit 0 pass; exit 1, or exit 2 with a `Tests:` line, fail; no result line or any
+    other exit, broken."""
+    body = s8.agent_path(stem).read_text(encoding="utf-8")
+    line = one_line(test, body, r"exit 2", r"Tests:", r"broken",
+                    label=f"{stem}: pest exit 0 is pass; exit 1, or exit 2 with a Tests: result line, is a fail; no result line or any other exit is broken")
+    test.assertRegex(line, r"(?i)exit 0[^.;]{0,40}pass")
+    test.assertRegex(line, r"(?i)exit 1[^.;]{0,80}fail|fail[^.;]{0,80}exit 1")
+    test.assertRegex(line, r"(?i)(no|without a|missing)[^.;]{0,20}(`?Tests:`? )?result line")
+    test.assertRegex(line, r"(?i)(any other exit|other exits?)")
+    for l in body.splitlines():
+        test.assertNotRegex(l, r"(?i)(pest|phpunit|rerun|red run)[^.\n]{0,120}(other than 0 or 1|neither 0 nor 1)",
+                            f"{stem}: a pest exit other than 0 or 1 is not broken: exit 2 with a result line is a fail")
+
+
 class Reviewer(unittest.TestCase):
     STEM = "laravel-reviewer"
 
@@ -34,10 +51,9 @@ class Reviewer(unittest.TestCase):
     def test_a_rerun_with_a_pipe_in_the_filter_quotes_the_whole_container_command(self):
         self.assertRegex(text(self.STEM), QUOTED_PIPE_FILTER)
 
-    def test_a_pest_exit_other_than_0_or_1_is_a_broken_rerun(self):
-        line = one_line(self, text(self.STEM), r"(other than 0 or 1|neither 0 nor 1)", r"broken",
-                        label="a rerun that exits other than 0 or 1 is a broken rerun, not a result")
-        self.assertRegex(line, r"(?i)rerun")
+    def test_a_rerun_reads_the_pest_exit_with_its_result_line(self):
+        # Amended in round 2 (F1): was "a pest exit other than 0 or 1 is a broken rerun".
+        assert_pest_exit_rule(self, self.STEM)
 
     # Row 97
     def test_any_installed_vendor_package_is_evidence_for_its_own_behavior(self):
@@ -107,9 +123,9 @@ class ReviewerDeep(unittest.TestCase):
     def test_a_rerun_with_a_pipe_in_the_filter_quotes_the_whole_container_command(self):
         self.assertRegex(text(self.STEM), QUOTED_PIPE_FILTER)
 
-    def test_a_pest_exit_other_than_0_or_1_is_a_broken_rerun(self):
-        one_line(self, text(self.STEM), r"(other than 0 or 1|neither 0 nor 1)", r"broken",
-                 label="a rerun that exits other than 0 or 1 is a broken rerun, not a result")
+    def test_a_rerun_reads_the_pest_exit_with_its_result_line(self):
+        # Amended in round 2 (F1): was "a pest exit other than 0 or 1 is a broken rerun".
+        assert_pest_exit_rule(self, self.STEM)
 
 
 class Checker(unittest.TestCase):

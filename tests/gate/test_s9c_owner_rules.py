@@ -51,8 +51,10 @@ class FoundDefects(unittest.TestCase):
     def test_the_writing_agents_raise_with_the_owner_when_they_do_not_fix(self):
         for stem in ("laravel-builder", "laravel-debugger"):
             with self.subTest(agent=stem):
-                line = one_line(self, text(stem), r"defect", r"owner", r"\bfix",
-                                label=f"{stem}: fix the found defect in the slice, or raise it with the owner")
+                # Amended in round 2 (F8): the builder raises a defect whose fix needs a ruling under Open, which is
+                # the owner's list; "owner" or "Open" both name that route.
+                line = one_line(self, text(stem), r"defect", r"(owner|\bOpen\b)", r"\bfix",
+                                label=f"{stem}: fix the found defect in the slice, or raise it with the owner (under Open)")
                 self.assertRegex(line, r"(?i)(slice|change|regression test|test)")
 
     def test_no_agent_tells_itself_to_leave_a_found_bug_for_later(self):

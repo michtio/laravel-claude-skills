@@ -145,10 +145,13 @@ class Environment(unittest.TestCase):
                          "a filter with | is written ddev exec \"vendor/bin/pest --filter='A|B'\"")
 
     # Row 22 (builder side)
-    def test_commits_carry_no_trailer_or_attribution_unless_asked(self):
+    def test_commits_and_pr_bodies_never_carry_a_trailer_or_attribution(self):
+        # Amended in round 2 (F12): was "unless the brief or the project asks"; the rule is absolute.
         line = one_line(self, text(), r"commit", r"(trailer|co-author|Co-Authored-By)", r"attribution",
-                        label="commits the brief asks for carry no trailer or attribution unless the brief or the project asks")
-        self.assertRegex(line, r"(?i)(unless|only when)[^.]{0,40}(brief|project)")
+                        label="commits and PR bodies carry no trailer or attribution, whatever the brief says")
+        self.assertRegex(line, r"(?i)(whatever|even (if|when))[^.]{0,30}brief")
+        self.assertRegex(line, r"(?i)(PR|pull request) (body|bodies|description)")
+        self.assertNotRegex(line, r"(?i)(unless|only when)[^.]{0,40}(brief|project) asks")
 
     # Rows 25 (open part), 51 (builder part)
     def test_a_setup_owned_file_blocking_a_gate_is_taken_over_never_hand_edited(self):
@@ -290,9 +293,12 @@ class GitAndLockCheck(unittest.TestCase):
         line = one_line(self, text(), r"(one|a separate) (literal )?command (per|for each) gate commit", r"(loop|variable)",
                         label="one literal lock-check command per gate commit, never a loop or a variable")
 
-    def test_an_exit_other_than_0_or_1_is_a_broken_check(self):
-        one_line(self, text(), r"(other than 0 or 1|neither 0 nor 1)", r"broken",
-                 label="a lock check exit other than 0 or 1 is a broken check, not a verdict")
+    def test_a_git_lock_check_exit_other_than_0_or_1_is_a_broken_check(self):
+        # Amended in round 2 (F1): the rule is about git diff --quiet (0, 1, 128), never about a pest exit.
+        line = one_line(self, text(), r"(other than 0 or 1|neither 0 nor 1)", r"broken",
+                        label="a lock check (git diff --quiet) exit other than 0 or 1 is a broken check, not a verdict")
+        self.assertRegex(line, r"(?i)(128|pathspec|git diff|lock)")
+        self.assertNotRegex(line, r"(?i)\b(pest|phpunit)\b")
 
     # Row 77
     def test_a_superseded_gate_commit_gets_a_no_own_files_line(self):
@@ -302,9 +308,15 @@ class GitAndLockCheck(unittest.TestCase):
 
     # Row 55
     def test_the_commit_recipe_stages_nothing_until_commit_time(self):
+        # Amended in round 2 (F3): the recipe is git add -- <paths>, then git diff --cached --name-only lists
+        # exactly those paths, then git commit -- <paths>.
         line = one_line(self, text(), r"(stage nothing|nothing is staged|no staging)", r"git commit -- ",
-                        label="when the brief asks for commits: stage nothing until commit time, commit with git commit -- <paths>")
-        self.assertRegex(line, r"git diff --cached")
+                        label="when the brief asks for commits: stage nothing until commit time; git add -- <paths>, check git diff --cached --name-only lists exactly them, git commit -- <paths>")
+        self.assertRegex(line, r"git add -- ")
+        self.assertRegex(line, r"git diff --cached --name-only")
+        self.assertRegex(line, r"(?i)exactly")
+        self.assertLess(line.index("git add -- "), line.index("git diff --cached --name-only"))
+        self.assertLess(line.index("git diff --cached --name-only"), line.index("git commit -- "))
         self.assertRegex(line, r"(?i)deletion")
 
     # Row 65 (open part)

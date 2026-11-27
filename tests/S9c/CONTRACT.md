@@ -11,7 +11,7 @@ python3 -m unittest discover -s tests/gate     # includes test_s9c_*.py; the S9b
 sh scripts/check.sh                            # agent budgets (48 KB, checker 16 KB), caps, tool rules
 ```
 
-Gate files: `tests/gate/test_s9c_gate_writer.py`, `tests/gate/test_s9c_builder.py`, `tests/gate/test_s9c_review_plan.py`, `tests/gate/test_s9c_owner_rules.py`. Standard library only, no DDEV, no network.
+Gate files: `tests/gate/test_s9c_gate_writer.py`, `tests/gate/test_s9c_builder.py`, `tests/gate/test_s9c_review_plan.py`, `tests/gate/test_s9c_owner_rules.py`, and from round 2 `tests/gate/test_s9c_round2.py` (section 9). Standard library only, no DDEV, no network.
 
 ## 1. How a rule is checked
 
@@ -65,7 +65,7 @@ As in S9b: each test states what an agent must do and checks that the agent's ow
 | 5 | S9d (runner guideline, tinker under `ddev exec`) |
 | 10 | open part (`tests/TestCase.php`) S9d: setup, not in the plan's S9d list by number |
 | 12, 14, 15 | S9d |
-| 16 | open part: agent side in S9c builder `StandIns`, deep reviewer `test_a_missing_checker_type_gets_general_purpose_stand_ins`. The `.claude/settings.json` part is not pinned: S9b section 6 pins that the setup writes none; changing that needs an owner ruling |
+| 16 | open part: agent side in S9c builder `StandIns`, deep reviewer `test_a_missing_checker_type_gets_general_purpose_stand_ins`. The `.claude/settings.json` part was ruled 2026-11-27: the setup never writes it and prints suggested settings instead, built in S9d |
 | 17 | open part: planner `Planner` (both tests), builder `test_the_slices_public_names_go_into_the_gate_writers_brief` |
 | 18 | gate writer `ReadingTheSpec`, builder `test_spec_text_a_criterion_refers_to_is_pasted_into_the_brief` |
 | 19 | gate writer `test_test_doubles_are_declared_lazily`, `test_boot_calls_sit_in_the_tests_that_need_them` |
@@ -133,7 +133,7 @@ As in S9b: each test states what an agent must do and checks that the agent's ow
 | 90 | closed (S9b row 23: `test_s9b_agents.py` Builder todo tests already pin the fallback this row asks for) |
 | 91 | builder `StandIns` |
 | 92 | builder `test_in_the_locked_flow_tests_beyond_the_gate_may_be_proved_by_mutation` |
-| 93 | no test: needs an owner ruling. The row asks to drop "README claim names the test" from the builder, which R7 states as a MUST; scope changes go PRD first |
+| 93 | ruled 2026-11-27 (R7 amended: a README never cites tests; a docblock or comment names its test). Round 2: `test_s9c_round2.py` F5 `test_reviewers_and_checker_check_r7` |
 | 94 | builder `test_the_revert_runs_as_a_bash_script_and_checks_the_tree_changed`, `test_a_filter_with_a_pipe_quotes_the_whole_container_command` |
 | 95 | builder `test_new_files_are_proved_by_mutating_the_guarding_line_as_well` |
 | 96 | reviewer and deep reviewer `test_a_rerun_with_a_pipe_in_the_filter_quotes_the_whole_container_command`, `test_a_pest_exit_other_than_0_or_1_is_a_broken_rerun` |
@@ -170,3 +170,38 @@ Run on `763870c` (main after S9b): every new test fails because the rule is miss
 ## 8. Open (names and wording this gate pins; the owner may rename before the build)
 
 Hand-back and report lines: gate writer `Values chosen:`, `Green by design:`, `Passability:`, `Constraints:`, `Breaks later:`, `Suite:`, the marker `R-only`; builder `Environment:`, `Values chosen:`, `CI:`, `Commits:`, `Checker: via general-purpose (<file>)`, `Lock check: <hash>: no own files (superseded by <hash>)`, `<test>: green (pin) -> red under <mutation>`, `red under mutation`, `<test>: migrated <old> -> <new>`, `spec not updated: <row>`; reviewer `Merge: blocked by <findings> | not blocked`, `met on <driver>, not met on <driver>`, `` `no verdict` ``; every agent `Learnings:`. Planner template `- **Public names:**` and `- **Project files:**`. Phrases: "gate wins", "ruled in", "parent slice", "one literal command per gate commit", "other than 0 or 1" with "broken", "Auth flows", `tests/Support/`, the quoted filter form `ddev exec "vendor/bin/pest --filter='A|B'"`, `claude-skills:setup --yes` with the manifest.
+
+## 9. Round 2 (PR #12 review findings F1 to F13)
+
+Written on `a30754d` (the builder's S9c commit). Gate file: `tests/gate/test_s9c_round2.py`, plus the amendments below to round 1 files. Same lock rules. Owner rulings used: R7 as amended 2026-11-27 (decisions log), and the 2026-11-27 row 16 ruling.
+
+- **F1, pest exits.** PHPUnit exits 2 when a run has errors (`ShellExitCodeCalculator::EXCEPTION_EXIT = 2`, checked in the installed `vendor/phpunit/phpunit/src/TextUI/ShellExitCodeCalculator.php`, PHPUnit 13.4.7, where `hasErrors()` sets it). The builder, the reviewer and the deep reviewer each state in one line: exit 0 is a pass; exit 1, or exit 2 with a `Tests:` result line, is a fail; no result line, or any other exit, is a broken run. No line ties a pest, PHPUnit, rerun or red-run exit to "other than 0 or 1". The git lock-check rule (0 untouched, 1 changed, 128 an error, any other exit broken) stays as test_s9_round2 needs it.
+- **F2, F7, stand-ins.** The checker stand-in's prompt (builder Checker gate, deep reviewer) carries the checker's restriction: never writes or edits, never runs tinker or record-rule, starts no agents. The gate writer stand-in's prompt: writes only under `tests/`, never starts agents. Each names where the file is when the pack is a plugin: `${CLAUDE_PLUGIN_ROOT}/agents/<name>.md` (it resolves in agent Markdown bodies to `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/`; https://code.claude.com/docs/en/plugins-reference, "Environment variables", and https://code.claude.com/docs/en/plugins/loading.md, "Find plugins on disk"). The builder and the deep reviewer both say "pass no `model`" with the general-purpose stand-in's frontmatter model as the one exception.
+- **F3.** The commit recipe: `git add -- <paths>`, then `git diff --cached --name-only` lists exactly those paths, then `git commit -- <paths>`, in that order, in one bullet.
+- **F4.** Both reviewers give a superseded gate commit the builder's `no own files (superseded by <hash>)` line and never lock-check it with an empty pathspec.
+- **F5.** The reviewer, the deep reviewer and the checker each check project files (behavior changed without the README, docs and CHANGELOG updated is Important) and R7 as amended (a README never cites tests; a docblock or comment that claims behavior names its test). The debugger's hand-back has `Project files:`. The gate writer carries the found-defect rule.
+- **F6.** In both reviewers `Merge:` is the defined last result line: blocked on any Critical or Important finding or an unmet MUST, otherwise not blocked. The CHANGELOG states that rule and drops "end with a `Merge:` line".
+- **F8.** The found-defect criterion in the builder, the debugger, the planner and the README: fix it, unless the fix needs a ruling (a spec change, the public API, or scope); the builder then stops at a passing gate and raises it under Open. Builder step 4's "reported, not silently fixed" is gone.
+- **F9.** A workflow-adding slice validates the workflow with actionlint locally, or on the pushed PR; without a push it goes under Open as not run.
+- **F10.** The builder's hand-back has a `Tests:` line with the proof forms (`red (<reason>) -> green`, `green (pin) -> red under`, `migrated`) and a `Found defects:` line, and its `Revert-to-prove:` line says one per fix.
+- **F11.** The builder has a step for a gate writer that returns a question instead of a gate commit: answer from the spec verbatim, or ask the owner, then re-brief. The gate writer's Rules bullet names the temporary-install exception for `composer.json` (restored).
+- **F12.** The gate writer puts the amendment's `git diff --stat`, the superseded rulings and its count note under Open. The builder's attribution rule is absolute: commits and PR bodies carry no trailer or attribution, whatever the brief says.
+- **F13.** The checker's empty reply is `No findings for <lens>.` plus the Learnings line. Both reviewers put Learnings last, after Merge; the reviewer's template ends with `Merge:` then `Learnings:`.
+
+### Amendments to round 1 files (authorized in the round 2 brief)
+
+| File | Test | Was | Now |
+|---|---|---|---|
+| `test_s9c_review_plan.py` | Reviewer and ReviewerDeep `test_a_pest_exit_other_than_0_or_1_is_a_broken_rerun` | a pest exit other than 0 or 1 is broken (wrong: exit 2 with a result line is a fail) | renamed `test_a_rerun_reads_the_pest_exit_with_its_result_line`, the F1 rule through `assert_pest_exit_rule` |
+| `test_s9c_builder.py` | `test_an_exit_other_than_0_or_1_is_a_broken_check` | the line only had to say "other than 0 or 1" and "broken" | renamed `test_a_git_lock_check_exit_other_than_0_or_1_is_a_broken_check`: the line is about git (`128`, pathspec, `git diff` or lock) and names no pest or PHPUnit exit |
+| `test_s9c_builder.py` | `test_commits_carry_no_trailer_or_attribution_unless_asked` | no attribution unless the brief or the project asks | renamed `test_commits_and_pr_bodies_never_carry_a_trailer_or_attribution`: absolute, PR bodies included, no "unless ... asks" |
+| `test_s9c_builder.py` | `test_the_commit_recipe_stages_nothing_until_commit_time` | stage nothing, `git diff --cached`, `git commit -- ` | adds `git add -- `, `git diff --cached --name-only`, "exactly", in that order (F3) |
+| `test_s9c_owner_rules.py` | `test_the_writing_agents_raise_with_the_owner_when_they_do_not_fix` | the line had to say "owner" | "owner" or "Open" (F8 raises a ruling-needing defect under Open) |
+
+### Red on `a30754d`
+
+Every round 2 test fails on the missing rule (`no single paragraph or bullet states: ...`, a missing hand-back line, or the old wording still present: `reported, not silently fixed`, `unless the brief or the project asks`, the template ending in `### Suggestions`). None is green by design. A passability probe (rule lines added to copies of the agent files, README and CHANGELOG in the scratchpad, never committed) turned all S9c tests and the earlier agent tests (test_s8*, test_s9*, test_s9b_agents, test_s9b_project_files) green together: 368 tests, OK.
+
+### Open (round 2 names)
+
+`${CLAUDE_PLUGIN_ROOT}/agents/` (or the `.claude/plugins/cache/` path), "one exception" with "pass no `model`", "last result line", the `Tests:` and `Found defects:` hand-back lines, "one per fix" on `Revert-to-prove:`, "re-brief".
