@@ -28,6 +28,15 @@ class PitfallChecks(unittest.TestCase):
         self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
 
 
+class PitfallIndex(unittest.TestCase):
+    def test_every_pitfall_reference_is_linked_from_the_skill_index(self):
+        refs = sorted((SKILLS / "laravel-pitfalls/references").glob("*.md"))
+        self.assertTrue(refs)
+        index = read(SKILLS / "laravel-pitfalls/SKILL.md")
+        self.assertEqual([r.name for r in refs if f"references/{r.name}" not in index], [],
+                         "a pitfall reference is not linked from the laravel-pitfalls index")
+
+
 class Generalized(unittest.TestCase):
     def test_no_shipped_skill_or_agent_names_a_field_test_project(self):
         paths = sorted(SKILLS.rglob("*.md")) + sorted((REPO / "agents").glob("*.md")) \

@@ -16,14 +16,22 @@ https://github.com/spatie/guidelines-skills/tree/1.1.0/resources/boost/skills
 """
 from __future__ import annotations
 
+import re
 import sys
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from skill_content import CORE, agent, agents, assert_verdict, first_line, line_in, pitfall, read  # noqa: E402
+from skill_content import CORE, agent, assert_verdict, files, first_line, house_style_block, line_in, pitfall, read  # noqa: E402
 from test_s9b_agents import section  # noqa: E402
+
+
+def first_line_in(text: str, patterns: tuple):
+    for line in text.splitlines():
+        if all(re.search(p, line, re.I) for p in patterns):
+            return line
+    return None
 
 
 class BuilderArtisanOutput(unittest.TestCase):
@@ -37,12 +45,13 @@ class HouseStyle(unittest.TestCase):
         line_in(self, read(CORE), r"single-line", r"multi-line", r"chain", r"(never|not) mix",
                 label="never mix single-line and multi-line method chaining")
 
-    def test_event_and_listener_naming_hints(self):
-        # In the core guideline or the builder (see the contract)
-        found = first_line([CORE, agents.agent_path("laravel-builder")],
-                           (r"\bevents?\b", r"tense", r"\blisteners?\b"))
-        self.assertIsNotNone(found, "no naming hint: events named by tense (UserRegistering, UserRegistered), "
-                                    "listeners by the action they take")
+    def test_event_and_listener_naming_hints_sit_in_the_house_style_block(self):
+        # Owner ruling: conventions, so inside @if ($houseStyle); with house_style false the team's style governs
+        line_in(self, house_style_block(read(CORE)), r"\bevents?\b", r"tense", r"\blisteners?\b",
+                label="inside the house-style block: events named by tense (UserRegistering, UserRegistered), listeners by the action they take")
+        outside = read(CORE).replace(house_style_block(read(CORE)), "")
+        self.assertIsNone(first_line_in(outside, (r"\bevents?\b", r"tense", r"\blisteners?\b")),
+                          "the naming hint is outside the house-style block")
 
 
 class ConfigPlacement(unittest.TestCase):
@@ -50,6 +59,11 @@ class ConfigPlacement(unittest.TestCase):
         pitfall(self, None, r"config/services\.php", r"config\(\)",
                 label="third-party service settings go in config/services.php and are read through config(), never env(), outside config files",
                 source="spatie/guidelines-skills")
+        path, _ = first_line(files("pitfalls"), (r"config/services\.php", r"config\(\)"))
+        gap = re.search(r"^Gap: covered partly by Boost \((.*)\)\s*$", read(path), re.M)
+        self.assertIsNotNone(gap, f"{path.name}: the config pitfall is covered partly (owner ruling)")
+        self.assertIn("rules/config", gap.group(1), "the Gap line names Boost's config rule")
+        self.assertIn("noEnvCallsOutsideOfConfig", gap.group(1), "the Gap line names Larastan's noEnvCallsOutsideOfConfig")
 
 
 class ReviewerChecklist(unittest.TestCase):

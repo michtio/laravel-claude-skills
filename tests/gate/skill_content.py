@@ -10,8 +10,8 @@ Where content lands decides what else it must carry:
   git-ignored internal-docs/pitfall-sources.md cites the gaps row (`skills-gaps row 101`, or
   `skills-gaps rows 119, 120 and 151`). The source half runs where internal-docs/ exists (the
   builder's and the reviewer's checkout); a public clone or CI has no internal-docs/.
-- any other skill file the pack ships (a testing note, a package-author note): the file has a Gap line
-  (R1: every rule names the gap it fills in Boost).
+- testing notes: one place, laravel-pitfalls/references/testing.md (owner ruling: no new skill), with its
+  Gap line and a `## testing` source section citing each row.
 """
 from __future__ import annotations
 
@@ -28,6 +28,7 @@ import test_s8 as agents  # noqa: E402
 REPO = Path(__file__).resolve().parent.parent.parent
 SKILLS = REPO / "resources/boost/skills"
 PITFALL_REFS = SKILLS / "laravel-pitfalls/references"
+TESTING = PITFALL_REFS / "testing.md"
 REGISTER = SKILLS / "laravel-package-verdicts/references/register.md"
 CORE = REPO / "resources/boost/guidelines/core.blade.php"
 SOURCES = REPO / "internal-docs/pitfall-sources.md"
@@ -101,19 +102,22 @@ def pitfall(test: unittest.TestCase, row: int | None, *patterns: str, label: str
     return line
 
 
-def note(test: unittest.TestCase, *patterns: str, label: str, row: int | None = None) -> str:
-    """One line of any shipped skill file carries the item; that file names its Boost gap (R1).
-
-    When the line lands in a pitfall reference, the source line is required too (R2)."""
-    found = first_line(files("skills"), patterns)
+def note(test: unittest.TestCase, *patterns: str, label: str, row: int) -> str:
+    """One line of laravel-pitfalls/references/testing.md carries the testing note (owner ruling: no new skill,
+    one place); the file has a Gap line (R1) and its `## testing` source section cites the row (R2)."""
+    found = first_line([TESTING], patterns)
     if found is None:
-        test.fail(f"no skill file under resources/boost/skills has a paragraph or bullet that states: {label}")
+        test.fail(f"laravel-pitfalls/references/testing.md has no paragraph or bullet that states: {label}")
     path, line = found
-    if path.name != "register.md":
-        test.assertRegex(read(path), GAP, f"{path.relative_to(REPO)} carries the item but no Gap: line (R1)")
-    if path.parent == PITFALL_REFS and row is not None:
-        assert_sourced(test, path, row=row)
+    test.assertRegex(read(path), GAP, "testing.md carries the note but no Gap: line (R1)")
+    assert_sourced(test, path, row=row)
     return line
+
+
+def house_style_block(text: str) -> str:
+    """The body of the core guideline's `@if ($houseStyle)` block, or '' when there is none."""
+    m = re.search(r"@if \(\$houseStyle\)(.*?)@endif", text, re.S)
+    return m.group(1) if m else ""
 
 
 def agent(test: unittest.TestCase, stem: str) -> str:

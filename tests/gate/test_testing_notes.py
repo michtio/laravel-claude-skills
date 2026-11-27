@@ -1,11 +1,12 @@
 """Testing notes the pack's skills carry: assertions, architecture rules, package suites, concurrency gates,
 HTTP tests with several devices, Pest helper scope.
 
-Requirements R1, R5 (test isolation), R6. Gaps rows 33, 42, 60, 108, 130, 135, 144, 153, 155, 156, 167
-and 168 (the skill half).
+Requirements R1, R5 (test isolation), R6. Gaps rows 33, 42, 60, 108, 130, 135, 144, 153, 155, 156, 167,
+168 (the skill half) and 171.
 Contract: tests/SkillContent/CONTRACT.md, section "Testing notes".
 
-A note may live in any skill the pack ships (resources/boost/skills/**); that file names its Boost gap.
+Every note lives in laravel-pitfalls/references/testing.md (owner ruling: no new skill), which names its
+Boost gap and whose `## testing` source section cites each row.
 """
 from __future__ import annotations
 
@@ -15,7 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from skill_content import agents, files, first_line, note  # noqa: E402
+from skill_content import TESTING, agents, first_line, note  # noqa: E402
 
 
 class Assertions(unittest.TestCase):
@@ -73,8 +74,8 @@ class PackageSuites(unittest.TestCase):
 
     def test_repeated_impure_calls_are_marked_not_suppressed(self):
         # Row 144: may sit in a skill or in the builder's Larastan guidance
-        found = first_line(files("skills") + [agents.agent_path("laravel-builder")], (r"@phpstan-impure", r"(suppress|ignore)"))
-        self.assertIsNotNone(found, "no skill file and no builder line says: mark a helper @phpstan-impure for "
+        found = first_line([TESTING, agents.agent_path("laravel-builder")], (r"@phpstan-impure", r"(suppress|ignore)"))
+        self.assertIsNotNone(found, "neither testing.md nor the builder says: mark a helper @phpstan-impure for "
                                     "repeated calls whose result changes (cache, locks, clocks), rather than suppressing")
 
 
@@ -91,6 +92,15 @@ class ConcurrencyGates(unittest.TestCase):
              label="exact expected counts, so a sequential run passes only when the rule holds")
         note(self, r"(?-i:RESULT:)", row=130,
              label="each racer prints a RESULT: line the parent requires")
+
+
+class TimeTravel(unittest.TestCase):
+    def test_time_travel_loses_file_session_data(self):
+        # Row 171
+        note(self, r"travel\(\)", r"mtime", r"file", row=171,
+             label="travel() moves Carbon but not file mtimes, so the file session handler reads a travelled session back empty")
+        note(self, r"(database driver|database session)", r"travel", row=171,
+             label="prefer the database session driver for time-travel tests, or design for it")
 
 
 class SeveralDevices(unittest.TestCase):

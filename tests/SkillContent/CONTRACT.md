@@ -1,6 +1,6 @@
 # Gate contract: skill content (pitfalls, testing notes, verdicts, agent rules, Spatie learnings)
 
-Slice S9d-2 of the laravel-layer spec. Requirements: R1, R2, R5, R6, R7, R13, R15, R16, R17 (decisions log 2026-11-27: "S9c and S9d", the S9d split, "Learnings from spatie/guidelines-skills", "Human-readable tests", R7 amended, the team rules in the agents). Source: `internal-docs/skills-gaps.md`, rows 1 to 169 as of this gate (rows 170 to 173 arrived while it was written; see Open). Plan: slice S9d in `internal-docs/specs/2026-11-26-laravel-layer/plan.md`, split as the decisions log records.
+Slice S9d-2 of the laravel-layer spec. Requirements: R1, R2, R5, R6, R7, R13, R15, R16, R17 (decisions log 2026-11-27: "S9c and S9d", the S9d split, "Learnings from spatie/guidelines-skills", "Human-readable tests", R7 amended, the team rules in the agents). Source: `internal-docs/skills-gaps.md`, rows 1 to 173 (rows 170 to 173 added in round 3, owner ruling: S9d covers every later field-test row). Round 3 also applies the owner's rulings on the first hand-back (section 16). Plan: slice S9d in `internal-docs/specs/2026-11-26-laravel-layer/plan.md`, split as the decisions log records.
 
 The gate is written before the builder starts. The builder implements to this contract and never edits the gate files below or the test configuration; under G3 it may add its own tests, each failing first. A change to a gate file goes back to the gate writer. The builder closes each row in `skills-gaps.md` with the commit that fixed it. Everything earlier slices pinned stays, in particular the S9d-1 docs tests (`ReadmesNeverCiteTests` keeps R7 over every shipped `resources/boost/**/*.md`, the new references included) and `scripts/check.sh`.
 
@@ -15,19 +15,21 @@ python3 -m unittest discover -s tests/gate -p 'test_agent_field_learnings.py'
 python3 -m unittest discover -s tests/gate -p 'test_spatie_learnings.py'
 python3 -m unittest discover -s tests/gate -p 'test_skill_content_hygiene.py'
 ddev exec vendor/bin/pest tests/Profile/S9d1GitleaksTest.php
+ddev exec vendor/bin/pest --group=R23 tests/Profile/CiServicesTest.php
+ddev exec vendor/bin/pest tests/Profile/CiServicesTest.php tests/Profile/HouseStyleNamingHintsTest.php
 sh scripts/check.sh
 python3 -m unittest discover -s tests/gate
 ddev exec vendor/bin/pest
 ```
 
-Gate files: `tests/gate/skill_content.py` (shared helpers), `tests/gate/test_pitfalls_cache_and_concurrency.py`, `tests/gate/test_pitfalls_auth_and_sessions.py`, `tests/gate/test_pitfalls_data_and_validation.py`, `tests/gate/test_pitfalls_privacy_and_queues.py`, `tests/gate/test_package_authoring.py`, `tests/gate/test_testing_notes.py`, `tests/gate/test_readable_test_names.py`, `tests/gate/test_agent_field_learnings.py`, `tests/gate/test_spatie_learnings.py`, `tests/gate/test_skill_content_hygiene.py`, and the amended `tests/Profile/S9d1GitleaksTest.php`.
+Gate files: `tests/gate/skill_content.py` (shared helpers), `tests/gate/test_pitfalls_cache_and_concurrency.py`, `tests/gate/test_pitfalls_auth_and_sessions.py`, `tests/gate/test_pitfalls_data_and_validation.py`, `tests/gate/test_pitfalls_privacy_and_queues.py`, `tests/gate/test_package_authoring.py`, `tests/gate/test_testing_notes.py`, `tests/gate/test_readable_test_names.py`, `tests/gate/test_agent_field_learnings.py`, `tests/gate/test_spatie_learnings.py`, `tests/gate/test_skill_content_hygiene.py`, `tests/Profile/CiServicesTest.php`, `tests/Profile/HouseStyleNamingHintsTest.php`, and the amended `tests/Profile/S9d1GitleaksTest.php`.
 
 ## 1. How content is read
 
 A rule counts only when one paragraph or bullet (one line of the file) carries all of its operative words, as in the earlier agent and docs gates. Patterns are case-insensitive, except all-caps tokens (`MUST`, `FAIL`, `SELECT`, `ESCAPE`, `CI`, `TTL`, `UPDATE`, `REPEATABLE READ`, `RESULT:`, `Important`), which match case-sensitively. The exact patterns are in the test files; the sections below name what each one requires.
 
 - **Pitfalls** (`pitfall()`): the line is in a `resources/boost/skills/laravel-pitfalls/references/*.md` file. That file has a valid `Gap:` line (R1), and its section `## <file stem>` in the git-ignored `internal-docs/pitfall-sources.md` has a line citing the row as `skills-gaps row 101` or `skills-gaps rows 119, 120 and 151` (R2). The source half runs where `internal-docs/` exists (the builder's and the reviewer's checkout); a public clone and CI have none, as in the S4 gate. The Spatie config pitfall cites `spatie/guidelines-skills` instead of a row. Which reference (an existing one or a new file) is the builder's choice; a new file gets its `## <stem>` section in the sources file and a link in the SKILL.md index.
-- **Testing and package notes** (`note()`): the line is in any skill file the pack ships (`resources/boost/skills/**/*.md`), and that file has a valid `Gap:` line (R1: every rule names its Boost gap). A note that lands in a pitfall reference also needs its source line. Boost's own skills are never edited (R4); a new skill of the pack is the builder's choice.
+- **Testing notes** (`note()`, round 3 ruling: no new skill, one place): the line is in `resources/boost/skills/laravel-pitfalls/references/testing.md`, which has a valid `Gap:` line, a `## testing` section in `internal-docs/pitfall-sources.md` citing each row, and a link from the SKILL.md index. The agent-rule halves stay in the agent files. Boost's own skills are never edited (R4).
 - **Verdicts** (`assert_verdict()`): a five-cell row in `laravel-package-verdicts/references/register.md`, a Use from the allowed set, the stated needles in Reason or Conditions, Checked on or after 2026-11-27.
 - **Agent rules** (`line_in()` on the agent's own file).
 
@@ -49,7 +51,7 @@ Rows 37 (a tripwire, never the guarantee; every field, ints included; tested fal
 
 ## 6. Package authoring (`test_package_authoring.py`)
 
-Rows 39 (`tagged()` stops at the first throwing abstract; a registry with `register()`; a lazy closure), 50 and 59 (reflection with `hasProperty`, a public-API fallback and a canary; never `?? []`; an unexpected shape falls back and logs once), 132 (a Testbench script that throws exits 0; require a result marker), 36 as notes (every `illuminate/*` component in `require`; no `composer.lock` in a library; register versus boot; config validated at boot), and verdict rows: `laravel/passkeys` (rows 89, 106: pre-1.0, pin the minor; Use `use` or `depends`, see Open), `spatie/laravel-package-tools` and `orchestra/testbench` (row 40; `larastan/larastan` is already there), plus a line in the verdicts skill on `illuminate/*` versus `laravel/framework` in `require`.
+Rows 39 (`tagged()` stops at the first throwing abstract; a registry with `register()`; a lazy closure), 50 and 59 (reflection with `hasProperty`, a public-API fallback and a canary; never `?? []`; an unexpected shape falls back and logs once), 132 (a Testbench script that throws exits 0; require a result marker), 36 as notes (every `illuminate/*` component in `require`; no `composer.lock` in a library; register versus boot; config validated at boot), and verdict rows: `laravel/passkeys` (rows 89, 106: pre-1.0, pin the minor; Use `depends`), `spatie/laravel-package-tools` and `orchestra/testbench` (row 40; `larastan/larastan` is already there), plus a line in the verdicts skill on `illuminate/*` versus `laravel/framework` in `require`.
 
 ## 7. Testing notes (`test_testing_notes.py`)
 
@@ -92,11 +94,11 @@ Source: spatie/guidelines-skills 1.1.0 (https://github.com/spatie/guidelines-ski
 | 111 (pitfall recipe), 112, 115, 119, 120, 121, 131, 141, 151, 154, 159 | cache and concurrency (141 also gate writer) |
 | 142, 146, 147, 152, 160, 161 | agent rules |
 | 158, 162, 163 | readable test names |
-| 157 | not gated: the rule shipped in S9c (the gate writer's `Green by design:` line and hand-back field); only its status is stale (Open) |
+| 157 | not gated: the rule shipped in S9c; the builder closes the row citing the S9c commit (owner ruling) |
 | 1, 4, 5, 10, 12, 14, 15, 16, 32, 41, 51, 124, 127, 129, 133, 136, 140, 165, 166, 169 | closed by S9d-1 |
 | 17, 25, 53, 65, 81, 82 | closed: "rest fixed in S9c" per their status |
 | every other row up to 156 | closed by S9b or S9c |
-| 170 to 173 | arrived during this gate; not gated (Open) |
+| 170, 171, 172, 173 | round 3: auth pitfall, testing note, `CiServicesTest`, builder Revert-to-prove |
 
 ## 14. Constraints for the builder
 
@@ -107,6 +109,20 @@ Source: spatie/guidelines-skills 1.1.0 (https://github.com/spatie/guidelines-ski
 
 ## 15. Open
 
-Names and placements this gate pins (rename before the build if needed): pitfall content in `laravel-pitfalls/references/` (any file); testing and package notes in any shipped skill with a Gap line; the source-line format `skills-gaps row N`; Artisan output in the builder; chaining in the core guideline; naming hints in the core guideline or builder; the authorization test in `laravel-reviewer.md` Checks.
+Names and placements this gate pins (rename before the build if needed): pitfall content in `laravel-pitfalls/references/` (any file); testing notes in `laravel-pitfalls/references/testing.md`; package-author items in any pitfall reference; the source-line format `skills-gaps row N`; Artisan output in the builder; chaining in the core guideline; naming hints inside the core guideline's house-style block; `laravel.ci_services`, `REDIS_HOST` and a service key `redis` in the gate job; the authorization test in `laravel-reviewer.md` Checks.
 
-Rulings needed: see the gate commit's hand-back.
+Rulings: the first hand-back's are applied in section 16 (later sections win over earlier ones where they differ).
+
+## 16. Round 3 (owner rulings on the first hand-back)
+
+- `laravel/passkeys`: Use is exactly `depends` (pre-1.0, pin the minor).
+- Row 157: closed by the builder citing the S9c commit; no test.
+- Testing notes: only `laravel-pitfalls/references/testing.md` (see section 1); row 144 accepts testing.md or the builder.
+- Row 36 is a pitfall reference (any file, sourced) and also pins `final` providers and publish tags, which the row names.
+- The config pitfall is "covered partly": the file carrying the `config/services.php` line has a `Gap: covered partly by Boost (...)` line naming `rules/config` (Boost's `laravel-best-practices` config rule) and Larastan's `noEnvCallsOutsideOfConfig`.
+- Naming hints sit inside `@if ($houseStyle)` (the Python gate checks the block; no copy outside it), and `HouseStyleNamingHintsTest` renders the guideline with Blade (backticks and `<?php` hidden as Boost 2.10's `RendersBladeGuidelines::renderContent()` does) against a project root: present by default, absent with `"house_style": false`.
+- Row 170 (auth pitfall): `logout()` cycles the single `remember_token` on every device, `logoutCurrentDevice()` does not; a companion cookie named after `getRecallerName()`; a Login listener cannot refuse a remember-me login, so refuse in middleware; `viaRemember() && getUser() === $event->user`, since `viaRemember` stays true after a failed recaller.
+- Row 171 (testing note): `travel()` moves Carbon, not file mtimes, so file sessions read back empty; prefer the database session driver.
+- Row 172 (setup and profile, `CiServicesTest`): `"laravel": {"ci": true, "ci_services": ["redis"]}` gives the gate job a `redis` service whose image starts with `redis` and a `REDIS_HOST` env key; no "Ignoring unknown profile key: laravel.ci_services" line; a rerun says No changes; on `test_database: ddev` the `database` service stays beside it; without the key no redis service and no `REDIS_HOST` (green by design, paired); a docs/profile.md line names `ci_services` and Redis. The image tag and env values are the builder's.
+- Row 173 (builder): the Revert-to-prove section describes the mutate script in one line (copy, substitute, assert it applied, run the tests, restore, `cmp`).
+- Hygiene: every pitfall reference is linked from the laravel-pitfalls SKILL.md index (green by design).

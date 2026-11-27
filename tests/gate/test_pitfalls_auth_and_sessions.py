@@ -1,7 +1,7 @@
 """Pitfalls: sign-in events, password confirmation, session keys, address lookups, derived secrets, passkeys.
 
-Requirements R1, R2, R5 (authorization parity, edge validation). Gaps rows 38, 102, 105, 106, 145, 148
-and 150.
+Requirements R1, R2, R5 (authorization parity, edge validation). Gaps rows 38, 102, 105, 106, 145, 148,
+150 and 170.
 Contract: tests/SkillContent/CONTRACT.md, section "Auth and sessions".
 """
 from __future__ import annotations
@@ -27,6 +27,21 @@ class SignInEvents(unittest.TestCase):
                 label="a remember-cookie sign-in keeps the guest session's data; clear a member-bound value on every Login")
         pitfall(self, 150, r"second member", r"remember",
                 label="test it with a second member's remember cookie on the stamped session")
+
+
+class RevokingOneDevice(unittest.TestCase):
+    def test_logout_cycles_the_remember_token_on_every_device(self):
+        # Row 170
+        pitfall(self, 170, r"logout\(\)", r"remember_token", r"(every device|all devices)",
+                label="SessionGuard::logout() cycles the single remember_token, which kills remember-me on every device")
+        pitfall(self, 170, r"logoutCurrentDevice\(\)", r"(does not|doesn't|never) cycle",
+                label="logoutCurrentDevice() does not cycle the remember token")
+        pitfall(self, 170, r"companion cookie", r"getRecallerName\(\)",
+                label="per-device revocation needs its own binding: a companion cookie named after getRecallerName()")
+        pitfall(self, 170, r"Login listener", r"(cannot|can't) refuse", r"middleware",
+                label="a Login listener cannot refuse a remember-me login; refuse in middleware after the guard's user()")
+        pitfall(self, 170, r"viaRemember\(\)", r"getUser\(\)", r"failed recaller|stays true",
+                label="tell the remember path apart with viaRemember() && getUser() === $event->user (viaRemember stays true after a failed recaller)")
 
 
 class PasswordConfirmation(unittest.TestCase):

@@ -1,6 +1,6 @@
 """Writing a Laravel package: framework internals, Testbench scripts, package rules and verdict rows.
 
-Requirements R1, R2, R5, R13. Gaps rows 36, 39, 40, 50 (the pitfall recipe), 59, 89 (the register row),
+Requirements R1, R2, R5, R13. Gaps rows 36 (a pitfall reference), 39, 40, 50 (the pitfall recipe), 59, 89 (the register row),
 106 (the verdict half) and 132.
 Contract: tests/SkillContent/CONTRACT.md, section "Package authoring".
 """
@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from skill_content import assert_verdict, files, first_line, note, pitfall  # noqa: E402
+from skill_content import assert_verdict, files, first_line, pitfall  # noqa: E402
 
 
 class TaggedServices(unittest.TestCase):
@@ -46,21 +46,25 @@ class TestbenchScripts(unittest.TestCase):
 
 class PackageRules(unittest.TestCase):
     def test_package_author_rules(self):
-        # Row 36
-        note(self, r"illuminate/\*", r"require", r"(every|each|all)", row=36,
-             label="a package declares every illuminate/* component it touches in require")
-        note(self, r"composer\.lock", r"(library|package)", r"(never|not|no)\b", row=36,
-             label="a library does not commit composer.lock")
-        note(self, r"\bregister\b", r"\bboot\b", r"provider", row=36,
-             label="provider register versus boot")
-        note(self, r"config", r"\bboot\b", r"(validat|check)", row=36,
-             label="validate the package config at boot")
+        # Row 36, as a pitfall reference (the row asks for a package-author reference)
+        pitfall(self, 36, r"illuminate/\*", r"require", r"(every|each|all)",
+                label="a package declares every illuminate/* component it touches in require")
+        pitfall(self, 36, r"composer\.lock", r"(library|package)", r"(never|not|no)\b",
+                label="a library does not commit composer.lock")
+        pitfall(self, 36, r"\bregister\b", r"\bboot\b", r"provider",
+                label="provider register versus boot")
+        pitfall(self, 36, r"config", r"\bboot\b", r"(validat|check)",
+                label="validate the package config at boot")
+        pitfall(self, 36, r"`?final`?", r"providers?",
+                label="the package's service providers are final")
+        pitfall(self, 36, r"publish", r"tags?",
+                label="publishable files carry publish tags")
 
 
 class Verdicts(unittest.TestCase):
     def test_laravel_passkeys_has_a_verdict(self):
-        # Rows 89 and 106: pre-1.0, pin the minor (row 89 says use, row 106 says depends: see Open)
-        assert_verdict(self, "laravel/passkeys", ("use", "depends"), r"pre-1\.0", r"pin(s|ned)? (to )?the minor")
+        # Rows 89 and 106: depends (owner ruling), pre-1.0, pin the minor
+        assert_verdict(self, "laravel/passkeys", ("depends",), r"pre-1\.0", r"pin(s|ned)? (to )?the minor")
 
     def test_the_package_author_toolchain_has_verdicts(self):
         # Row 40

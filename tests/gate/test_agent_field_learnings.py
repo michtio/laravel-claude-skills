@@ -1,7 +1,7 @@
 """Agent rules from the field test: concurrency gates, mutation proofs, existing tests, dev services,
 helper scope, and the deep reviewer's evidence and report.
 
-Requirements R15, R16, R17. Gaps rows 130, 141, 152, 160, 164 and 168 (gate writer), 142 and 161
+Requirements R15, R16, R17. Gaps rows 130, 141, 152, 160, 164 and 168 (gate writer), 142, 161 and 173
 (builder), 164 (planner), 146, 147 and 152 (deep reviewer).
 Contract: tests/SkillContent/CONTRACT.md, section "Agent rules".
 
@@ -16,7 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from skill_content import agent, line_in  # noqa: E402
+from skill_content import agent, line_in, section  # noqa: E402
 
 
 class GateWriterConcurrency(unittest.TestCase):
@@ -78,6 +78,15 @@ class BuilderRules(unittest.TestCase):
         # Row 161
         line_in(self, self.text(), r"existing", r"(environment|setup)", r"(no|never an?) assertion", r"hand-back",
                 label="an existing test may get environment setup for a newly ruled requirement when no assertion changes, named in the hand-back")
+
+
+class BuilderMutateScript(unittest.TestCase):
+    def test_revert_to_prove_describes_the_mutate_script(self):
+        # Row 173
+        body = section(agent(self, "laravel-builder"), "Revert-to-prove")
+        self.assertTrue(body, "laravel-builder.md has no Revert-to-prove section")
+        line_in(self, body, r"mutat", r"(copy|back ?up)", r"appl", r"restore", r"\bcmp\b",
+                label="the mutate script: copy the file, substitute, assert the substitution applied, run the tests, restore, cmp")
 
 
 class PlannerDevServices(unittest.TestCase):

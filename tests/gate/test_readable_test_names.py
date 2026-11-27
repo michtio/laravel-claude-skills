@@ -83,26 +83,26 @@ class Planner(unittest.TestCase):
 class TestingSkill(unittest.TestCase):
     def test_the_testing_notes_carry_the_naming_rules(self):
         # Rows 158, 162
-        note(self, *FEATURE_FILE, label="test files are named by feature")
-        note(self, *SENTENCE, label="descriptions read as sentences")
-        note(self, *GROUPS, label="R and AC ids go in Pest groups")
-        note(self, *NO_PROCESS_IDS, label="never a slice or round id in a file, helper, class, constant or comment name")
-        note(self, *HELPER_PREFIX, label="global helper functions carry a prefix unique to their file")
+        note(self, *FEATURE_FILE, label="test files are named by feature", row=158)
+        note(self, *SENTENCE, label="descriptions read as sentences", row=158)
+        note(self, *GROUPS, label="R and AC ids go in Pest groups", row=158)
+        note(self, *NO_PROCESS_IDS, label="never a slice or round id in a file, helper, class, constant or comment name", row=158)
+        note(self, *HELPER_PREFIX, label="global helper functions carry a prefix unique to their file", row=168)
 
     def test_groups_are_runnable_selectors(self):
         # Row 163
-        note(self, r"--list-tests", r"--group", label="--list-tests --group=AC8 lists exactly the grouped tests")
+        note(self, r"--list-tests", r"--group", label="--list-tests --group=AC8 lists exactly the grouped tests", row=163)
         note(self, r"--group=", r"(word|filter|description)",
-             label="run gates as --group=<id>, not a word filter that depends on description prefixes")
+             label="run gates as --group=<id>, not a word filter that depends on description prefixes", row=162)
         note(self, r"->group\(", r"(anywhere|->with\(|->throws\()",
-             label="->group() chains anywhere on a test, before ->with() or ->throws()")
+             label="->group() chains anywhere on a test, before ->with() or ->throws()", row=163)
 
     def test_renames_and_splits(self):
         # Row 163
         note(self, r"rename", r"(only|just) the (description|test\(\))", r"closing",
-             label="a rename script changes only the description line and the closing line of each test")
+             label="a rename script changes only the description line and the closing line of each test", row=163)
         note(self, r"split", r"helpers?", r"(together|with its|redeclare)",
-             label="split a gate file only together with its helpers (a second definition is a fatal redeclare)")
+             label="split a gate file only together with its helpers (a second definition is a fatal redeclare)", row=163)
 
 
 if __name__ == "__main__":
