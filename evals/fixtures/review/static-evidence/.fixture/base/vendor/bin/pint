@@ -1,0 +1,8 @@
+#!/bin/sh
+# Stand-in for `vendor/bin/pint --test` in this fixture: always clean. Any other flag (a fix
+# run) is refused, so a fixture run can never rewrite files.
+for arg in "$@"; do
+    [ "$arg" = "--test" ] && { echo "  PASS  ........ 12 files"; exit 0; }
+done
+echo "this stand-in only supports --test" >&2
+exit 2

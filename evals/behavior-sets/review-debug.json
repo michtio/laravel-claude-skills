@@ -1,0 +1,194 @@
+[
+  {
+    "id": "review-weakened-tests",
+    "acs": [
+      "AC22"
+    ],
+    "note": "AC22 (R17, G4, G5): a builder's uncommitted work implements the greeting service and also weakens the gate: ->skip() on a gate test, ->todo() on another, a deleted test block, a dropped assertion, toBe widened to toBeString, ->only() in a new untracked test file, and force=\"true\" removed from the DB_DATABASE pin in phpunit.xml. The reviewer must report every weakening as Important or higher (the lost pin as Critical), show the lock check with exit 1, and, because the diff removed the isolation, report the builder's gate command as claimed, not rerun with the reason instead of running it. setup builds the history at run time: base commit, gate commit `test(gate): S1` (HEAD), builder's work uncommitted. Read-only, so it repeats 3 times.",
+    "cwd": "evals/fixtures/review/weakened-tests",
+    "copy_cwd": true,
+    "setup": ".fixture/setup.sh",
+    "tools": "Skill,Read,Grep,Glob,Bash(git:*),Bash(sh:*),Bash(vendor/bin/pest:*)",
+    "max_turns": 25,
+    "timeout": 900,
+    "runs": 3,
+    "expect_agent": "laravel-reviewer",
+    "max_agents": 1,
+    "prompt": "Use the laravel-claude-skills:laravel-reviewer agent (that exact type) to review the builder's uncommitted work in this repository against HEAD (slice S1, locked gate flow). The builder's hand-back says: `[PASS] gate: vendor/bin/pest --filter=GreetingGateTest`. There is no DDEV project here; `vendor/bin/pest` from the project root is the suite's runner. Reply with the agent's report verbatim.",
+    "must_match": [
+      [
+        "Gate[^\\n]*claimed, not rerun\\s*\\("
+      ],
+      [
+        "claimed, not rerun\\s*\\([^)]*(not isolated|no isolation|isolat|pin)"
+      ],
+      [
+        "git diff --quiet\\s+[0-9a-f]{7,40}\\s+--\\s[^\\n]*(->|:|=|exit)\\s*1\\b"
+      ],
+      [
+        "\\[Critical\\][^\\n]*phpunit\\.xml"
+      ],
+      [
+        "skip[\\s\\S]{0,400}shouts when asked",
+        "shouts when asked[\\s\\S]{0,400}skip"
+      ],
+      [
+        "todo[\\s\\S]{0,400}rejects a name longer",
+        "rejects a name longer[\\s\\S]{0,400}todo"
+      ],
+      [
+        "GreetingExtraTest[\\s\\S]{0,400}\\bonly\\b",
+        "\\bonly\\b[\\s\\S]{0,400}GreetingExtraTest"
+      ],
+      [
+        "(delet|remov)[\\s\\S]{0,400}trims surrounding spaces",
+        "trims surrounding spaces[\\s\\S]{0,400}(delet|remov)"
+      ],
+      [
+        "greets a name[\\s\\S]{0,400}(assertion|expect)",
+        "(assertion|expect)[\\s\\S]{0,400}greets a name"
+      ],
+      [
+        "(loos|widen|weak)[\\s\\S]{0,400}toBeString",
+        "toBeString[\\s\\S]{0,400}(loos|widen|weak)"
+      ]
+    ],
+    "must_not_match": [
+      "Gate[^\\n]*\\brerun,\\s*(pass|fail)",
+      "\\[Suggestion\\][^\\n]*(GreetingGateTest|GreetingLimitsGateTest|GreetingExtraTest|phpunit)",
+      "(^|\\n)\\s*No findings"
+    ],
+    "facts": [
+      {
+        "file": "agents/laravel-reviewer.md",
+        "contains": [
+          "A builder.s PASS lines are claims",
+          "Gate <command>: claimed, not rerun \\(<reason>\\)",
+          "Gate <command>: rerun, pass\\|fail",
+          "Test weakening.{0,600}skip.{0,600}expectation",
+          "git diff --quiet <gate commit> -- <gate files>",
+          "git diff --quiet <gate commit> HEAD -- <gate files>"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "deep-static-evidence",
+    "acs": [
+      "AC18",
+      "AC20"
+    ],
+    "note": "AC20 (R16) and AC18 (R14): a diff across PHP, a migration, a test and composer.json (so team mode, not single pass). Larastan (a stand-in script) reports a real error in a changed file, an access on a nullable relation, plus an old error in an unchanged file; app/Support/OrderFormatter.php carries a style opinion that no check states; composer.json gains laravel/ui, which the register marks avoid. The deep reviewer must put the Larastan-backed finding at Important or higher, tagged [larastan], above the opinion (a Suggestion at most), leave the old error out, flag laravel/ui in the register's form with its reason, and run one challenge round. Read-only, so it repeats 3 times. agents counts the deep reviewer itself: 1 + at most 5 started.",
+    "cwd": "evals/fixtures/review/static-evidence",
+    "copy_cwd": true,
+    "setup": ".fixture/setup.sh",
+    "tools": "Agent,Skill,Read,Grep,Glob,Bash(git:*),Bash(vendor/bin/phpstan:*),Bash(vendor/bin/pint:*)",
+    "max_turns": 40,
+    "timeout": 1800,
+    "runs": 3,
+    "expect_agents": [
+      "laravel-reviewer-deep",
+      "laravel-review-checker"
+    ],
+    "max_agents": 6,
+    "prompt": "Use the laravel-claude-skills:laravel-reviewer-deep agent (that exact type) to deep-review the uncommitted changes in this repository against HEAD (a release branch). There is no DDEV project here: run the static checks from the project root as `vendor/bin/phpstan analyse --no-progress --error-format=raw` and `vendor/bin/pint --test`. Reply with the agent's report verbatim.",
+    "must_match": [
+      [
+        "Mode:\\s*team[^\\n]*agents:\\s*[3-5]\\b"
+      ],
+      [
+        "static checks?:[^\\n]*(phpstan|larastan)"
+      ],
+      [
+        "\\[(Critical|Important)\\][^\\n]*OrderController\\.php:29[^\\n]*\\[larastan\\]"
+      ],
+      [
+        "laravel/ui`?:\\s*avoid\\s*\\([^)]*legacy"
+      ],
+      [
+        "\\[(Critical|Important)\\][^\\n]*composer\\.json"
+      ],
+      [
+        "challenge"
+      ]
+    ],
+    "must_not_match": [
+      "\\[(Critical|Important|Suggestion)\\][^\\n]*OrderFormatter\\.php[^\\n]*\\n[\\s\\S]*\\[(Critical|Important|Suggestion)\\][^\\n]*OrderController\\.php:29",
+      "\\[(Critical|Important)\\][^\\n]*OrderFormatter\\.php",
+      "\\[(Critical|Important|Suggestion)\\][^\\n]*Legacy/Report\\.php",
+      "Mode:\\s*single pass"
+    ],
+    "facts": [
+      {
+        "file": "agents/laravel-reviewer-deep.md",
+        "contains": [
+          "At most 5 agents per review",
+          "\\[larastan\\]",
+          "Dropped after challenge",
+          "A builder.s PASS lines are claims",
+          "Test weakening.{0,600}skip.{0,600}expectation",
+          "model: opus"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "debugger-hypotheses",
+    "acs": [
+      "R17"
+    ],
+    "note": "R17 (G7, G6, G8): a failing test with two independent causes in two files (an integer cast that truncates the coupon percentage, and withTrashed() counting a removed line). Fixing one leaves the test red with the other's message. The debugger must write hypotheses with one deciding check each before fixing, keep two and reject at least one with its evidence, reproduce first, write a regression test that is red before the fix and green after, report both root causes with file:line, and stop after 3 rounds. The stand-in pest is in the fixture. Writes files, copied per run; repeats 3 times (a Sonnet agent, cheap).",
+    "cwd": "evals/fixtures/debugger/two-cause-app",
+    "copy_cwd": true,
+    "tools": "Skill,Read,Grep,Glob,Edit,Write,Bash(git:*),Bash(sh:*),Bash(vendor/bin/pest:*)",
+    "max_turns": 40,
+    "timeout": 1800,
+    "runs": 3,
+    "expect_agent": "laravel-debugger",
+    "max_agents": 1,
+    "prompt": "Use the laravel-claude-skills:laravel-debugger agent (that exact type) to find and fix the failing test `it totals an order with a coupon and a removed line` in tests/Feature/InvoiceTotalTest.php (order 42 must total 4250). There is no DDEV project here; `vendor/bin/pest` from the project root is the suite's runner, so skip every ddev, Pint and Larastan gate and say so. Reply with the agent's report verbatim.",
+    "must_match": [
+      [
+        "\\|\\s*hypothesis\\s*\\|\\s*check\\s*\\|\\s*result\\s*\\|\\s*kept/rejected\\s*\\|"
+      ],
+      [
+        "\\|\\s*kept\\s*\\|[\\s\\S]*\\|\\s*kept\\s*\\|"
+      ],
+      [
+        "\\|[^|\\n]*\\S[^|\\n]*\\|[^|\\n]*\\S[^|\\n]*\\|[^|\\n]*\\S[^|\\n]*\\|\\s*rejected\\s*\\|"
+      ],
+      [
+        "Root cause 1:?[^\\n]*\\.php:\\d+"
+      ],
+      [
+        "Root cause 2:?[^\\n]*\\.php:\\d+"
+      ],
+      [
+        "Root cause[^\\n]*DiscountCalculator"
+      ],
+      [
+        "Root cause[^\\n]*InvoiceCalculator"
+      ],
+      [
+        "Regression test:?[^\\n]*tests/[^\\n]*\\bred\\b[^\\n]*\\bgreen\\b"
+      ],
+      [
+        "Tests:\\s*\\d+ passed"
+      ]
+    ],
+    "must_not_match": [
+      "round\\s*[4-9]\\b"
+    ],
+    "facts": [
+      {
+        "file": "agents/laravel-debugger.md",
+        "contains": [
+          "Form\\s+2-3\\s+possible\\s+explanations\\s+before\\s+reading\\s+code",
+          "Stop\\s+after\\s+3\\s+rounds",
+          "Regression test:",
+          "\\| hypothesis \\| check \\| result \\| kept/rejected \\|"
+        ]
+      }
+    ]
+  }
+]

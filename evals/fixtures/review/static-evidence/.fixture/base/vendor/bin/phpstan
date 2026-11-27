@@ -1,0 +1,18 @@
+#!/bin/sh
+# Stand-in for `vendor/bin/phpstan analyse --no-progress --error-format=raw` in this fixture.
+# No PHP, no Composer install: it prints the raw error lines a real run over this tree would
+# print, decided from the files. Run it from the project root.
+here=$(cd "$(dirname "$0")" && pwd)
+cd "$here/../.." || exit 2
+status=0
+line=$(grep -n -F 'customer->email' app/Http/Controllers/OrderController.php 2>/dev/null | head -n 1 | cut -d: -f1)
+if [ -n "$line" ]; then
+    echo "app/Http/Controllers/OrderController.php:$line:Cannot access property \$email on App\\Models\\Customer|null."
+    status=1
+fi
+line=$(grep -n -F 'function build(array $rows)' app/Legacy/Report.php 2>/dev/null | head -n 1 | cut -d: -f1)
+if [ -n "$line" ]; then
+    echo "app/Legacy/Report.php:$line:Method App\\Legacy\\Report::build() has no return type specified."
+    status=1
+fi
+exit $status
