@@ -32,6 +32,7 @@ final class PlannedFile
      * @param bool|null $unrecordedEdit The planner's own verdict for an existing file the setup has no record of (overrides the fingerprint rule).
      * @param bool $executable Whether the file must carry the executable bits.
      * @param bool $currentExecutable Whether the file carries them now.
+     * @param string|null $replaceNote An extra line shown when applying replaces a hand edit of a file the setup wrote.
      * @author michtio
      */
     public function __construct(
@@ -45,6 +46,7 @@ final class PlannedFile
         public readonly ?bool $unrecordedEdit = null,
         public readonly bool $executable = false,
         public readonly bool $currentExecutable = false,
+        public readonly ?string $replaceNote = null,
     ) {
     }
 
@@ -53,7 +55,7 @@ final class PlannedFile
      *
      * @author michtio
      */
-    public static function whole(string $root, string $path, ?string $desired, bool $executable = false): self
+    public static function whole(string $root, string $path, ?string $desired, bool $executable = false, ?string $replaceNote = null): self
     {
         $current = self::read($root, $path);
 
@@ -65,6 +67,7 @@ final class PlannedFile
             $desired === null ? null : SetupState::fingerprint($desired),
             executable: $executable,
             currentExecutable: $current !== null && (fileperms($root.'/'.$path) & 0111) !== 0,
+            replaceNote: $replaceNote,
         );
     }
 

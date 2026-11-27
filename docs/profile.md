@@ -134,11 +134,11 @@ parameters:
         - routes
 ```
 
-- The paths are those of `app`, `config`, `database` and `routes` that exist, in that order (`app` when none does); `src` for a Testbench package.
+- The paths are those of `app`, `config`, `database` and `routes` that exist, in that order; when none exists, `src` if it exists, else `app`. A Testbench package gets `src`.
 - If Larastan is not required yet, the plan adds `composer require --dev larastan/larastan` (`ddev composer require --dev larastan/larastan` on DDEV), run after the other commands and before the extra steps. Larastan is never removed.
 - An existing `phpstan.neon`, `phpstan.neon.dist` or `phpstan.dist.neon` that the setup did not write is never changed, and nothing is installed for it: the setup prints `Left alone: <file>` on every run. A `phpstan.neon` the setup wrote earlier is removed (if unchanged) once you add one of your own, so it cannot shadow yours.
-- The written file is owned like every setup file: a rerun reports `No changes`, a hand edit is reported as `edited by hand: phpstan.neon`, and changing `phpstan_level` plans only that file.
-- `phpstan/extension-installer` also includes Larastan and this pack on its own. With it installed, check that PHPStan does not load them twice; if it does, keep your own config file instead.
+- The written file is owned like every setup file: a rerun reports `No changes`, and changing `phpstan_level` plans only that file. If you edit or replace it, the plan says `edited by hand: phpstan.neon` and `phpstan.neon: applying replaces your changes with level <n>`; nothing is written without your confirmation. To keep your own config, rename it to `phpstan.neon.dist` or `phpstan.dist.neon`: the setup then leaves it alone.
+- With `phpstan/extension-installer` in `require` or `require-dev`, the file has no `includes` block: the installer already includes Larastan and this pack, and including them again makes PHPStan fail with "included multiple times". Adding or removing the installer later plans that change to `phpstan.neon` like any other refresh.
 
 ## CI workflow
 

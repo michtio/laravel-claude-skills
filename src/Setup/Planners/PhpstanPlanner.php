@@ -18,7 +18,11 @@ use Michtio\LaravelClaudeSkills\Setup\SetupState;
  * project gets nothing, so the pack stays unopinionated about PHPStan.
  *
  * Paths: for an app, those of app, config, database and routes that exist, in that
- * order (app when none does); for a Testbench package, src.
+ * order; when none does, src if it exists, else app. For a Testbench package, src.
+ *
+ * With phpstan/extension-installer required, the file has no includes: the
+ * installer already includes Larastan's and this pack's extensions, and a second
+ * include makes PHPStan fail ("included multiple times").
  *
  * An existing PHPStan config the setup did not write (`phpstan.neon`,
  * `phpstan.neon.dist` or `phpstan.dist.neon`) is never changed: notice() names it
@@ -47,6 +51,11 @@ final class PhpstanPlanner implements Planner
      * The Larastan package.
      */
     public const LARASTAN = 'larastan/larastan';
+
+    /**
+     * The installer that includes PHPStan extensions on its own.
+     */
+    public const EXTENSION_INSTALLER = 'phpstan/extension-installer';
 
     /**
      * The includes, in order: Larastan's extension, then this pack's rules.
@@ -83,7 +92,12 @@ final class PhpstanPlanner implements Planner
      */
     public function plan(Project $project): PlannedFile
     {
-        return PlannedFile::whole($project->root, self::PATH, $this->writes($project) ? $this->content($project) : null);
+        return PlannedFile::whole(
+            $project->root,
+            self::PATH,
+            $this->writes($project) ? $this->content($project) : null,
+            replaceNote: self::PATH.': applying replaces your changes with level '.$this->level,
+        );
     }
 
     /**
@@ -125,14 +139,20 @@ final class PhpstanPlanner implements Planner
         $lines = [
             '# Written by claude-skills:setup at laravel.phpstan_level from .ai/skills-profile.json (default 8).',
             '# The setup refreshes this file when the level changes: edit it by hand only if you accept that.',
-            'includes:',
         ];
 
-        foreach (self::INCLUDES as $include) {
-            $lines[] = '    - '.$include;
+        // phpstan/extension-installer includes both extensions itself; a second include makes PHPStan fail.
+        if (! $project->requires(self::EXTENSION_INSTALLER)) {
+            $lines[] = 'includes:';
+
+            foreach (self::INCLUDES as $include) {
+                $lines[] = '    - '.$include;
+            }
+
+            $lines[] = '';
         }
 
-        array_push($lines, '', 'parameters:', '    level: '.$this->level, '    paths:');
+        array_push($lines, 'parameters:', '    level: '.$this->level, '    paths:');
 
         foreach ($this->paths($project) as $path) {
             $lines[] = '        - '.$path;
@@ -193,6 +213,10 @@ final class PhpstanPlanner implements Planner
 
         $paths = array_values(array_filter(self::APP_PATHS, static fn (string $path): bool => is_dir($project->root.'/'.$path)));
 
-        return $paths === [] ? ['app'] : $paths;
+        if ($paths !== []) {
+            return $paths;
+        }
+
+        return is_dir($project->root.'/src') ? ['src'] : ['app'];
     }
 }

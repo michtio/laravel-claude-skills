@@ -114,7 +114,9 @@ final class SetupPlan
 
             $notes = match (true) {
                 $file->current === null && $previous !== null => ['deleted since the last run: '.$file->path],
-                $handEdited && $previous !== null => ['it differs from what the setup wrote last; applying replaces the edit'],
+                $handEdited && $previous !== null => $file->replaceNote === null
+                    ? ['it differs from what the setup wrote last; applying replaces the edit']
+                    : ['it differs from what the setup wrote last; applying replaces the edit', $file->replaceNote],
                 $handEdited => ['the setup has no record of writing it; applying replaces its content'],
                 $file->current !== null && $file->foreignNote !== null => [$file->path.': '.$file->foreignNote],
                 default => [],
