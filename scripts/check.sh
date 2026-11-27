@@ -92,6 +92,9 @@ must_fail "symbol self-test (missing facade method)" "Illuminate\\Support\\Facad
 must_fail "symbol self-test (missing class)" "Illuminate\\Support\\Facades\\Transactor not found" python3 scripts/laravel_source.py check evals/fixtures/symbol-missing-class
 must_fail "symbol self-test (missing artisan command)" "artisan queue:explode not found" python3 scripts/laravel_source.py check evals/fixtures/symbol-missing-command
 gate      "symbols pass on evals/fixtures/symbol-valid" python3 scripts/laravel_source.py check evals/fixtures/symbol-valid
+must_fail "pitfall self-test (reference without a gap line)" "no gap line" python3 scripts/check_pitfalls.py --root evals/fixtures/pitfall-no-gap
+must_fail "pitfall self-test (covered partly, no Boost rule named)" "names no Boost rule" python3 scripts/check_pitfalls.py --root evals/fixtures/pitfall-partly-no-rule
+gate      "pitfall rules pass on evals/fixtures/pitfall-valid" python3 scripts/check_pitfalls.py --root evals/fixtures/pitfall-valid
 gate      "agent rules pass on evals/fixtures/valid" python3 scripts/agent_budget.py --root evals/fixtures/valid
 gate      "skill rules pass on evals/fixtures/valid" bash scripts/validate-skills.sh --root evals/fixtures/valid
 
