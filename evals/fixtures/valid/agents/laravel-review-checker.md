@@ -1,7 +1,7 @@
 ---
 name: laravel-review-checker
 description: Fixture agent.
-disallowedTools: Write, Edit, NotebookEdit, mcp__laravel-boost__tinker, mcp__laravel-boost__record-rule
+disallowedTools: Write, Edit, NotebookEdit, mcp__laravel-boost__tinker, mcp__laravel-boost__record-rule, Agent
 model: sonnet
 ---
 

@@ -27,10 +27,20 @@ Prints one line per agent (`ok  ` or `FAIL`) and a summary line. Exit 0 when no 
 | Cap N above 5 | `cap above 5` |
 | File name ending `-checker` or `-gate-writer` with `Agent` in `tools:` | `must not have the Agent tool` |
 | Read-only agent (file name contains `planner`, `reviewer`, `checker` or `gate-writer`) whose `disallowedTools:` does not name `mcp__laravel-boost__tinker` | `must disallow mcp__laravel-boost__tinker` |
+| Planner, reviewer, checker or gate writer without `Agent` in `disallowedTools:` and without a `tools:` allowlist that omits `Agent` (it would inherit Agent). Checker and gate writer | `must not have the Agent tool` |
+| Same, planner and reviewer | `must disallow Agent` |
+| Agent file without a closing `---` frontmatter fence | `no frontmatter` |
+| Reviewer or checker with `effort` xhigh, quotes stripped (`"xhigh"` counts); message as in the ported tool | `reviewer agents use effort high, not xhigh` |
 | Same agents whose `disallowedTools:` does not name `mcp__laravel-boost__record-rule` (it writes `.ai/rules`) | `must disallow mcp__laravel-boost__record-rule` |
 | Planner, reviewer or checker whose `disallowedTools:` lacks `Write`, `Edit` or `NotebookEdit` | `must disallow Write, Edit, NotebookEdit` |
 
-The gate writer writes tests, so it is exempt from the Write/Edit/NotebookEdit rule only, and must disallow tinker and record-rule like the others. An agent without `Agent` in `tools:` has cap 0. Reviewer and checker agents never use `effort: xhigh` (as in the Craft tool). Tool access is by `disallowedTools` (AD3); agents in this package declare no `tools:` list naming a Boost tool.
+The gate writer writes tests, so it is exempt from the Write/Edit/NotebookEdit rule only, and must disallow tinker and record-rule like the others. **How Agent is detected.** The Agent tool counts in every form: `Agent`, `Agent(...)` with a restriction (commas inside the parentheses included), and the old name `Task` or `Task(...)`. Inline lists (`tools: Read, Agent(a, b)`) and block lists both count, and block items may start at column 0 (`- Agent`).
+
+**Inheritance.** An agent with no `tools:` line inherits every tool, Agent included (plan AD3). So a planner, reviewer, checker or gate writer needs `Agent` in `disallowedTools` (or a `tools:` allowlist without it), and any other agent without a `tools:` line needs the cap line unless it disallows Agent.
+
+**Role markers** (`-checker`, `-gate-writer`, and planner, reviewer, checker, gate-writer for the read-only rules) apply to both the file stem and the frontmatter `name:`. `effort` values are compared with quotes stripped.
+
+An agent with no Agent tool, stated or inherited, has cap 0. Reviewer and checker agents never use `effort: xhigh` (as in the Craft tool). Tool access is by `disallowedTools` (AD3); agents in this package declare no `tools:` list naming a Boost tool.
 
 ### `bash scripts/validate-skills.sh [--root DIR]` (ruby, as in the Craft tool)
 
@@ -57,6 +67,15 @@ Each is a minimal tree. Each must-fail fixture violates exactly one rule.
 | `agent-cap-6` | `python3 scripts/agent_budget.py --root evals/fixtures/agent-cap-6` | 1 |
 | `agent-readonly-tinker` | `python3 scripts/agent_budget.py --root evals/fixtures/agent-readonly-tinker` | 1 |
 | `agent-readonly-record-rule` | `python3 scripts/agent_budget.py --root evals/fixtures/agent-readonly-record-rule` | 1 |
+| `agent-restricted-agent-no-cap` | `python3 scripts/agent_budget.py --root evals/fixtures/agent-restricted-agent-no-cap` | 1 |
+| `agent-task-alias-no-cap` | `python3 scripts/agent_budget.py --root evals/fixtures/agent-task-alias-no-cap` | 1 |
+| `agent-column0-list-no-cap` | `python3 scripts/agent_budget.py --root evals/fixtures/agent-column0-list-no-cap` | 1 |
+| `agent-no-tools-no-cap` | `python3 scripts/agent_budget.py --root evals/fixtures/agent-no-tools-no-cap` | 1 |
+| `checker-inherits-agent` | `python3 scripts/agent_budget.py --root evals/fixtures/checker-inherits-agent` | 1 |
+| `planner-inherits-agent` | `python3 scripts/agent_budget.py --root evals/fixtures/planner-inherits-agent` | 1 |
+| `agent-no-frontmatter` | `python3 scripts/agent_budget.py --root evals/fixtures/agent-no-frontmatter` | 1 |
+| `agent-name-field-checker` | `python3 scripts/agent_budget.py --root evals/fixtures/agent-name-field-checker` | 1 |
+| `reviewer-effort-xhigh-quoted` | `python3 scripts/agent_budget.py --root evals/fixtures/reviewer-effort-xhigh-quoted` | 1 |
 | `skill-body-over-12kb` | `bash scripts/validate-skills.sh --root evals/fixtures/skill-body-over-12kb` | 1 |
 | `skill-listing-over-1300` | `bash scripts/validate-skills.sh --root evals/fixtures/skill-listing-over-1300` | 1 |
 | `valid` | both commands above with `--root evals/fixtures/valid` | 0 |
