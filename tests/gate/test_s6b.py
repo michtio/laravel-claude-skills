@@ -28,6 +28,8 @@ import unittest
 import uuid
 from pathlib import Path
 
+import ddev_lock
+
 REPO = Path(__file__).resolve().parent.parent.parent
 APP = REPO / "fixtures/app"
 PACKAGE_FIXTURE = REPO / "tests/Fixtures/package"
@@ -65,6 +67,8 @@ def ensure_registered(app: Path) -> None:
 class AppIsolationInDdev(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls._ddev_lock = ddev_lock.acquire()
+        cls.addClassCleanup(ddev_lock.release, cls._ddev_lock)
         if not (APP / ".ddev/config.yaml").is_file():
             r = subprocess.run(["bash", str(REPO / "scripts/make-fixture-app.sh")], cwd=REPO, capture_output=True, text=True)
             if r.returncode != 0:
@@ -164,6 +168,8 @@ class AppIsolationOnPostgresInDdev(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        cls._ddev_lock = ddev_lock.acquire()
+        cls.addClassCleanup(ddev_lock.release, cls._ddev_lock)
         r = subprocess.run(["bash", str(REPO / "scripts/make-fixture-app.sh"), "--force"], cwd=REPO, capture_output=True, text=True)
         if r.returncode != 0:
             raise RuntimeError("make-fixture-app.sh --force failed: " + (r.stdout + r.stderr)[-2000:])

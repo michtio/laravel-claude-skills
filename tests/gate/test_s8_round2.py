@@ -89,19 +89,7 @@ class BuilderTests(unittest.TestCase):
         self.assertIn("git show --name-only --format= <gate commit>", body)
         self.assertRegex(body, r"(?i)never from (a|the|any) hand-?back")
 
-    def test_revert_to_prove_verifies_the_stash(self):
-        body = text(self, "laravel-builder")
-        self.assertIn('git stash push', body)
-        self.assertRegex(body, r"(?is)exact message")
-        self.assertRegex(body, r"(?is)(confirm|verify|check)[^.]{0,200}(entry|stash)[^.]{0,200}exact message|exact message[^.]{0,300}(entry|exists)")
-        self.assertRegex(body, r"(?is)fix files[^.]{0,120}(actually )?revert|(actually )?reverted")
-        self.assertIn("git checkout <base> -- <files>", body)
-
-    def test_revert_to_prove_stops_on_conflict_and_never_leaves_the_fix_in_the_stash(self):
-        body = text(self, "laravel-builder")
-        self.assertRegex(body, r"(?is)conflict[^.]{0,300}(stop|report)|(stop|report)[^.]{0,300}conflict")
-        self.assertRegex(body, r"(?is)between (the )?(stash )?push and (the )?apply")
-        self.assertRegex(body, r"(?is)never end[^.]{0,80}(run|hand-?back)[^.]{0,120}stash|stash[^.]{0,120}never[^.]{0,80}(end|leave)")
+    # The stash-based revert-to-prove tests of round 2 are replaced by test_s8_round3.py (ruling: no stash, no index).
 
 
 class BuilderNits(unittest.TestCase):

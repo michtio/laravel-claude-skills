@@ -19,6 +19,8 @@ import subprocess
 import unittest
 from pathlib import Path
 
+import ddev_lock
+
 REPO = Path(__file__).resolve().parent.parent.parent
 APP = REPO / "fixtures/app"
 GUIDELINE = ".ai/guidelines/claude-skills-runner.md"
@@ -33,6 +35,8 @@ def read(path: Path) -> str:
 class RunnerGuidanceSurvivesBoostUpdate(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls._ddev_lock = ddev_lock.acquire()
+        cls.addClassCleanup(ddev_lock.release, cls._ddev_lock)
         if not (APP / ".ddev/config.yaml").is_file():
             r = subprocess.run(["bash", str(REPO / "scripts/make-fixture-app.sh")],
                                cwd=REPO, capture_output=True, text=True)

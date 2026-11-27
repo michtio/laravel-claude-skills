@@ -33,6 +33,8 @@ import unittest
 from datetime import date
 from pathlib import Path
 
+import ddev_lock
+
 REPO = Path(__file__).resolve().parent.parent.parent
 GUIDELINE = REPO / "resources/boost/guidelines/core.blade.php"
 SKILL_DIR = REPO / "resources/boost/skills/laravel-package-verdicts"
@@ -134,6 +136,8 @@ class VerdictsRegister(unittest.TestCase):
 class FixtureAppIntegration(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls._ddev_lock = ddev_lock.acquire()
+        cls.addClassCleanup(ddev_lock.release, cls._ddev_lock)
         if not (APP / ".ddev/config.yaml").is_file():
             r = subprocess.run(["bash", str(REPO / "scripts/make-fixture-app.sh")],
                                cwd=REPO, capture_output=True, text=True)
