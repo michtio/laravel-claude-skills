@@ -22,7 +22,7 @@ it('says it uses the defaults when there is no profile, and lists them (AC14)', 
         ->toContain('runner: auto')
         ->toContain('house_style: true')
         ->toContain('phpstan_level: 8')
-        ->toContain('env_schema: false')
+        ->not->toContain('env_schema')
         ->toContain('monitoring: none')
         ->toContain('ci: false');
 });
@@ -78,7 +78,6 @@ it('gives the documented defaults through Profile::load when the file is missing
             'runner' => 'auto',
             'house_style' => true,
             'phpstan_level' => 8,
-            'env_schema' => false,
             'monitoring' => 'none',
             'ci' => false,
         ])
@@ -97,7 +96,6 @@ it('lets profile options win over the defaults and keeps the defaults for the re
             'runner' => 'auto',
             'house_style' => true,
             'phpstan_level' => 5,
-            'env_schema' => false,
             'monitoring' => 'none',
             'ci' => true,
         ]);

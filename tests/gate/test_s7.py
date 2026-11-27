@@ -29,7 +29,6 @@ LARAVEL_KEYS = {
     "runner": "auto",
     "house_style": "true",
     "phpstan_level": "8",
-    "env_schema": "false",
     "monitoring": "none",
     "ci": "false",
 }

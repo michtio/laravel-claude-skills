@@ -29,14 +29,13 @@ Tests copy `tests/Fixtures/app` or `tests/Fixtures/package` to a temp dir, write
 |---|---|---|---|
 | `runner` | `auto`, `ddev`, `host` | `auto` | `auto` follows detection (DDEV when `.ddev/` exists). `ddev` or `host` overrides detection for every runner-dependent file. |
 | `house_style` | boolean | `true` | None in the setup. The Boost guideline reads it (S5). A change plans nothing. |
-| `phpstan_level` | integer 0 to 10 | `8` | Validated and stated. Its effect on files is not pinned by this gate. |
-| `env_schema` | boolean | `false` | Validated and stated. Its effect on files is not pinned by this gate. |
+| `phpstan_level` | integer 0 to 10 | `8` | Writes `phpstan.neon` at that level (section 12). |
 | `monitoring` | `none`, `sentry`, `nightwatch` | `none` | `sentry` plans `composer require sentry/sentry-laravel`, `nightwatch` plans `composer require laravel/nightwatch` (section 5). `none` plans nothing and never removes a package. |
 | `ci` | boolean | `false` | `true` plans `.github/workflows/claude-skills-gate.yml` (section 7). |
 
 Output, on every run (plan, `--check`, `--yes`, "No changes" included), after `Runner: ...` and before the plan:
 
-- no profile file: the line `No profile found at .ai/skills-profile.json; using the defaults:` followed by one line per option, indented, as `  <key>: <value>` (booleans as `true`/`false`, e.g. `  runner: auto`, `  phpstan_level: 8`). The substrings `No profile found at .ai/skills-profile.json` and `using the defaults` and `<key>: <value>` for all six keys are pinned.
+- no profile file: the line `No profile found at .ai/skills-profile.json; using the defaults:` followed by one line per option, indented, as `  <key>: <value>` (booleans as `true`/`false`, e.g. `  runner: auto`, `  phpstan_level: 8`). The substrings `No profile found at .ai/skills-profile.json` and `using the defaults` and `<key>: <value>` for the five keys (not `env_schema`, section 12) are pinned.
 - a profile file: the line `Profile: .ai/skills-profile.json`, and neither `No profile found` nor `using the defaults` anywhere.
 - an unknown key inside `laravel`: the line `Ignoring unknown profile key: laravel.<key>`. Unknown keys anywhere else, and the keys themselves, are kept and ignored without a line.
 
@@ -50,7 +49,7 @@ Refused:
 
 - not JSON, not a JSON object, empty file (path `.ai/skills-profile.json`);
 - `version` missing or not the integer 1; `gate_tests` not `locked` or `builder-written`; `builders` not a list, an item without string `name` or `command`, `timeout_minutes` not a number above 0; `managed_by` or `setup` not an object; `setup.steps` not a list, a step without string `name` or `command` (the schema's rules);
-- `laravel` not an object (a JSON list is not an object); `laravel.runner` not one of `auto`, `ddev`, `host`; `laravel.house_style`, `laravel.env_schema`, `laravel.ci` not a JSON boolean (a string, an integer or null is refused); `laravel.phpstan_level` not an integer 0 to 10 (a string `"8"` or a float `7.5` is refused); `laravel.monitoring` not `none`, `sentry` or `nightwatch` (a boolean is refused);
+- `laravel` not an object (a JSON list is not an object); `laravel.runner` not one of `auto`, `ddev`, `host`; `laravel.house_style`, `laravel.ci` not a JSON boolean (a string, an integer or null is refused); `laravel.phpstan_level` not an integer 0 to 10 (a string `"8"` or a float `7.5` is refused); `laravel.monitoring` not `none`, `sentry` or `nightwatch` (a boolean is refused);
 - `verdicts` not an object; an entry not an object; `use` not `use`, `avoid` or `depends`; `reason` missing or an empty string; `conditions` not a string; `checked` not a `YYYY-MM-DD` string.
 
 Not refused: unknown keys at any level (AD6, the shared schema: "unknown keys are kept and ignored"), including unknown keys inside `laravel`, which only get the notice of section 2. `conditions` and `checked` are optional.
@@ -96,7 +95,7 @@ Not refused: unknown keys at any level (AD6, the shared schema: "unknown keys ar
 ## 8. Schema and docs
 
 - `schema/skills-profile.schema.json` is the Craft pack's file, byte for byte: `michtio/craftcms-claude-skills`, `main` at `48f0c241db45bacb0e9d6668afaeafb6473a7143` (merge of PR #32; the file is not in the v1.31.0 tag), blob `c199e01ba7112a4b0f1ae2d9dec47ebb9d6227e9`, sha256 `69cae85225237022d729e4020c3c1b74d7e2d9decb74cbf0e702d48114d05036`. The builder copies it (`git -C <craft repo> show main:schema/skills-profile.schema.json`), never edits it.
-- `docs/profile.md` names the path `.ai/skills-profile.json`, `claude-skills:setup` and `--check`; every property name of the schema in backticks (`version`, `managed_by`, `gate_tests`, `builders`, `name`, `command`, `timeout_minutes`, `setup`, `steps`, `verdicts`, `craft`, `answers`, `choices`, `hosting`, `passwordless`, `dev_root`, `chrome_devtools_mcp`, `craft_mcp`, `laravel`, `tool`); the six `laravel` keys, each on a line that also holds its default in backticks (`` `auto` ``, `` `true` ``, `` `8` ``, `` `false` ``, `` `none` ``, `` `false` ``); the enum values in backticks (`auto`, `ddev`, `host`, `sentry`, `nightwatch`, `none`, `locked`, `builder-written`); the phrases "unknown keys", "precedence", "default", "rerun", the workflow path and `composer test`; that a profile verdict replaces the register row. No model or vendor name.
+- `docs/profile.md` names the path `.ai/skills-profile.json`, `claude-skills:setup` and `--check`; every property name of the schema in backticks (`version`, `managed_by`, `gate_tests`, `builders`, `name`, `command`, `timeout_minutes`, `setup`, `steps`, `verdicts`, `craft`, `answers`, `choices`, `hosting`, `passwordless`, `dev_root`, `chrome_devtools_mcp`, `craft_mcp`, `laravel`, `tool`); the five `laravel` keys, each on a line that also holds its default in backticks (`` `auto` ``, `` `true` ``, `` `8` ``, `` `none` ``, `` `false` ``); the enum values in backticks (`auto`, `ddev`, `host`, `sentry`, `nightwatch`, `none`, `locked`, `builder-written`); the phrases "unknown keys", "precedence", "default", "rerun", the workflow path and `composer test`; that a profile verdict replaces the register row. No model or vendor name.
 
 ## 9. Exit codes
 
@@ -125,3 +124,38 @@ Gate files: `tests/Profile/ProfileRound2Test.php`, `tests/gate/test_s7_round2.py
 3. **Workflow PHP version**, first match wins: `.ddev/config.yaml` `php_version` (string or number, reduced to X.Y); `config.platform.php` of `composer.json` (X.Y); the lowest X.Y found in `require.php`; else `8.4`. `docs/profile.md` states the rule: `` `php_version` ``, `` `config.platform.php` ``, `` `require.php` `` and `8.4`, in that order, and `.ddev/config.yaml`.
 4. **Docs, steps.** `docs/profile.md` says that steps are "recorded by exact name and command" and that a team tool "must not rewrite" step text when it only updates other options (case-insensitive key phrases).
 5. **Workflow.** `on.push.branches` is exactly the default branch, which is `main` for a project without git (detection from git is the builder's call and not pinned); `pull_request` is on. `concurrency.cancel-in-progress` is an expression string that mentions `github.event_name` and `'pull_request'`, not the literal `true`. The test database name in the service environment (`MYSQL_DATABASE`, `MARIADB_DATABASE`, `POSTGRES_DB`) is quoted in the YAML text (`'app_test'` or `"app_test"`). The action pins stay `actions/checkout@v7`, `shivammathur/setup-php@v2`, `actions/cache@v6`, nothing else. The generated workflow passes actionlint 1.7.7 (`docker run rhysd/actionlint:1.7.7 <file>`; run by `test_s7_round2.py` when ddev and docker are present; checked by hand against 5153959 on 2026-11-27: clean).
+
+## 12. phpstan_level takes effect, env_schema dropped (scope addition ruled 2026-11-27)
+
+Gate files: `tests/Profile/ProfileLevelTest.php`; amended cases listed at the end. Same lock rules.
+
+**When the setup manages PHPStan.** Only for a project that is on Larastan (`larastan/larastan` in `require` or `require-dev`) or whose profile sets `laravel.phpstan_level` explicitly. For any other project (the S6 fixtures, a repo with no PHPStan and no level in its profile) the setup plans nothing about PHPStan and prints nothing. This is the gate writer's reading of "the default is 8": the default applies when the setup manages PHPStan and the profile gives no level. A literal "always write it" would plan `composer require` in every default run, and every S6 test that applies with `--yes` would run composer; the owner confirms or overrules.
+
+**The file.** When managed and none of `phpstan.neon`, `phpstan.neon.dist`, `phpstan.dist.neon` exists, the setup plans and writes `phpstan.neon`:
+
+```
+includes:
+    - vendor/larastan/larastan/extension.neon
+    - vendor/michtio/laravel-claude-skills/extension.neon
+
+parameters:
+    level: <level>
+    paths:
+        - ...
+```
+
+The two includes are exactly these, in this order: Larastan's own `extension.neon`, then the pack's (the path its `extension.neon` header tells users to include). `paths` for an app: those of `app`, `config`, `database`, `routes` that exist as directories, in that order, or `app` when none does; for a Testbench package: `src`. The text parses as YAML (spaces, no tabs).
+
+**Existing config.** An existing `phpstan.neon`, `phpstan.neon.dist` or `phpstan.dist.neon` is never changed, never duplicated and never gets an install planned, whatever its level. The setup prints `Left alone: <file>` (substring pinned, followed by free text such as "laravel.phpstan_level is not applied to an existing PHPStan config") on every run of a managed project that has one.
+
+**Owned.** The written `phpstan.neon` is owned like the other files: recorded in the state file; `No changes` on a rerun; `edited by hand: phpstan.neon` and a diff after a hand edit. A changed `phpstan_level` plans only that file (and the state), and applying it makes `--check` exit 0. A file that exists and was not written by the setup is "existing config" above.
+
+**Larastan missing.** When the file is planned and `larastan/larastan` is not required, the setup plans the `Run:` line `composer require --dev larastan/larastan` (`ddev composer require --dev larastan/larastan` on DDEV), also for a Testbench package, after the other actions and before the extra steps (like monitoring, section 5). Never planned when the package is already required; never removed. Tests that apply put Larastan into `composer.json` first, so no test runs composer.
+
+**env_schema.** It is no longer a Laravel key: any value is accepted (never refused), kept byte for byte in the file, ignored, and the existing notice `Ignoring unknown profile key: laravel.env_schema` is printed. `Profile::load()->laravel()` has five keys, in this order: `runner`, `house_style`, `phpstan_level`, `monitoring`, `ci`. The defaults statement lists those five and not `env_schema`. `docs/profile.md` no longer mentions `env_schema`.
+
+**Authorised gate amendments** (cases that pinned `env_schema` as a known key, amended as ruled):
+- `tests/Profile/ProfileValidationTest.php`: dataset row `'env_schema a string'` (was line 46) removed (it is now accepted and ignored; `ProfileLevelTest` covers it); dataset row `'env schema on'` of "accepts every documented laravel value" (was line 158) removed (the key is no longer in `laravel()`).
+- `tests/Profile/ProfileDefaultsTest.php`: line 25 `->toContain('env_schema: false')` became `->not->toContain('env_schema')`; the two `'env_schema' => false` entries of the expected `laravel()` arrays (were lines 81 and 100) removed.
+- `tests/gate/test_s7.py`: `LARAVEL_KEYS` loses `env_schema` (was line 32), so the docs test no longer requires it.
+- `tests/Profile/CONTRACT.md`: the table row of section 2, the validation list of section 3, the defaults lines and the docs list of section 8, as above.

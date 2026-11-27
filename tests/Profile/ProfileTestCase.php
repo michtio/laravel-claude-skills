@@ -96,10 +96,16 @@ abstract class ProfileTestCase extends TestCase
      * The profile for a project that is fully set up already (profile written, setup applied).
      *
      * @param array<string, mixed> $profile
+     * @param string|null $prepare Name of a function called with the project dir before the profile is written.
      */
-    protected function applied(string $fixture, array $profile, bool $ddev = false): string
+    protected function applied(string $fixture, array $profile, bool $ddev = false, ?string $prepare = null): string
     {
         $dir = $this->project($fixture, ddev: $ddev);
+
+        if ($prepare !== null) {
+            $prepare($dir);
+        }
+
         $this->writeProfile($dir, $profile);
         [$code] = $this->setupRun($dir, ['--yes' => true]);
         expect($code)->toBe(0);
