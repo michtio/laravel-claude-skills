@@ -291,7 +291,7 @@ it('keeps non-ASCII text in other servers unescaped', function () {
     runSetup($dir, ['--yes' => true]);
 
     $json = $this->read($dir, '.mcp.json');
-    expect($json)->toContain("caf\u{e9}.js")->not->toContain('é');
+    expect($json)->toContain("caf\u{e9}.js")->not->toContain('\\u00e9');
 });
 
 it('preserves the two-space indentation of the existing .mcp.json', function () {
