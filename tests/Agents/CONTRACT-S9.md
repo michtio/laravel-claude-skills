@@ -201,3 +201,15 @@ The builder's text drops the single-gate-commit assumption in the same way (its 
 ### 7.5 Budget script
 
 The exemption is the exact name `laravel-reviewer-deep`, not a suffix. Fixture `evals/fixtures/agent-other-reviewer-deep` (`acme-reviewer-deep`, inherits Agent, has a cap line) must fail with `must disallow Agent`; the orchestrator fixture still passes.
+
+## 8. Round 3 (`tests/gate/test_s9_round3.py`)
+
+Each git fact below is shown by a real temp-repo test (`GitFacts`); the agent-text tests check that the agents follow the safe method. Rulings 1, 2 and 5 apply to the reviewer, deep reviewer, builder and debugger; 3 and 4 to both reviewers; 6 and 7 to the deep reviewer (the plain reviewer never runs phpstan, so 7 is not pinned there).
+
+1. **Subject-only matching.** Gate commits are found with `git log --format='%H %s'` and each subject is checked literally: the slice id is compared as a string, never as a raw regex (or it is escaped). A body line `test(gate): S1` does not make a commit a gate commit (`--grep` matches bodies), and the slice id `AK-S.` does not match `AK-S1`. The old `git log --grep '^test(gate): <slice>'` form is gone.
+2. **Renames and deletions.** Gate files are listed with `--no-renames` or `--name-status`, so a renamed file's old path is not attributed to the earlier commit. Each file is checked against the last gate commit that touched it in which the file exists; a file a later gate commit deleted is not a gate file.
+3. **`GIT_OPTIONAL_LOCKS=0`** applies to every git command the reviewers run (exported once or prefixed on each): `status`, `diff`, `ls-files`, `log`. A plain `git status` rewrites the index.
+4. **PR mode base.** `origin/<baseRefName>` after a fetch, or the PR's merge base; never a possibly stale local branch.
+5. **Excluded commits.** A gate commit the brief explicitly excludes is reported, never used.
+6. **No challenger when every Critical or Important finding is deterministic** (lock check, avoid package, check-backed), with the line `Challenge: none (all findings deterministic)`. The round 2 line `Challenge: none (no Critical or Important findings)` stays for the zero case.
+7. **phpstan cache writes** are the one stated exception to the no-file-writes rule in the deep reviewer's Bash text.
