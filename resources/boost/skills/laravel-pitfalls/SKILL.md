@@ -20,7 +20,7 @@ Every reference opens with a gap line. `Gap: not covered by Boost` means Boost's
 | [Authorization: every door](references/authorization.md) | A new route, job, command or sibling method reaches an action; a refusal for another owner's record; a request body carries a foreign key; a screen receives a model | Review only |
 | [Population: which rows ran](references/population.md) | A job, command or report runs without a request; an access list can be empty; a set must be complete; a list paginates or exports | Review only |
 | [PII in logs and retention](references/pii-logs.md) | A log call, audit payload or exception context carries user data; a table collects personal data; a retention window is read | `NoPayloadInLogRule` |
-| [Edge validation](references/edge-validation.md) | `env()` is read, cast or used outside config; a LIKE pattern is built from input; an id from the request is validated with `exists` | `NoEnvOutsideConfigRule`, `NoCastOnEnvRule`, `NoUnescapedLikeRule` |
+| [Edge validation](references/edge-validation.md) | `env()` is read, cast or used outside config; a LIKE pattern is built from input; an id from the request is validated with `exists` | `NoUnescapedLikeRule`; Larastan `noEnvCallsOutsideOfConfig` for `env()`; the cast is review only |
 | [Docs claims](references/docs-claims.md) | A docblock, comment or README states a guarantee, lists what the code does, or says an integration is supported | Review only |
 
 ## Using the checks

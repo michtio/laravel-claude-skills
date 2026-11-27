@@ -2,11 +2,11 @@
 
 Gap: covered partly by Boost (laravel-best-practices, rules/config.blade.php: "Read environment variables in configuration files")
 
-Boost covers the rule that `env()` belongs in config files. It does not cover what happens to the value on the way in: a cast that turns a missing variable into zero, a LIKE pattern that treats the user's `%` as a wildcard, or a reference id that passes validation for a row the user may not touch. Each of these is input that Laravel and the database accept without complaint. This reference adds checks for the first three.
+Boost covers the rule that `env()` belongs in config files. It does not cover what happens to the value on the way in: a cast that turns a missing variable into zero, a LIKE pattern that treats the user's `%` as a wildcard, or a reference id that passes validation for a row the user may not touch. Each of these is input that Laravel and the database accept without complaint. This reference adds a check for the LIKE pattern, points to Larastan for `env()`, and gives review guidance for the cast.
 
 ## Pitfall 1: env() outside config
 
-Once `php artisan config:cache` has run, Laravel stops loading `.env`, and `env()` returns null (or its default) anywhere outside the config files. The code works locally and in tests, then reads null in production. The rule is Boost's. What this package adds is a check that enforces it.
+Once `php artisan config:cache` has run, Laravel stops loading `.env`, and `env()` returns null (or its default) anywhere outside the config files. The code works locally and in tests, then reads null in production. The rule is Boost's, and Larastan enforces it: `noEnvCallsOutsideOfConfig` is on by default, so this package ships no rule for it.
 
 ### Fix
 
@@ -20,7 +20,7 @@ Read the variable in a config file and use `config()` everywhere else:
 $key = config('services.payments.key');
 ```
 
-## Pitfall 2: a cast on env()
+## Pitfall 2: a cast on env() (review only)
 
 ```php
 'timeout' => (int) env('PAYMENTS_TIMEOUT'),    // unset: 0, "30s": 30, "abc": 0
@@ -29,6 +29,8 @@ $key = config('services.payments.key');
 ```
 
 `env()` returns strings (it maps only `true`, `false`, `null` and `empty`), so people cast. The cast accepts anything: a missing or mistyped variable becomes `0`, `0.0` or `false`, and the application starts with a zero timeout or with verification turned off instead of failing at boot.
+
+No static rule covers this: casts on `env()` are everywhere in stock Laravel configuration, where they are harmless, so a rule would flag correct code. Check it in review, and look at what a wrong value does: a timeout, a rate, or a security flag falling back to `0` or `false` silently.
 
 ### Fix
 
@@ -74,7 +76,7 @@ MySQL, MariaDB and PostgreSQL use backslash as the default LIKE escape character
 
 ## How to test it
 
-- Env and casts: the checks below are the tests. Add a boot-time test that calls `config()->integer('services.payments.timeout')` with the variable set to `abc` and expects an exception. Restore the `(int)` cast and it returns 0 instead.
+- Env casts: review only. Add a boot-time test that calls `config()->integer('services.payments.timeout')` with the variable set to `abc` and expects an exception. Restore the `(int)` cast and it returns 0 instead.
 - LIKE, run on the production database engine:
 
 ```php
@@ -92,10 +94,8 @@ Remove `addcslashes()` and the test goes red: both users match.
 
 ## Check
 
-Three rules in `extension.neon`, each ending `See laravel-pitfalls: edge-validation`:
-
-- `NoEnvOutsideConfigRule` reports every `env()` call in a file with no `config` directory segment in its path. Proof: `tests/PHPStan/Rules/NoEnvOutsideConfigRuleTest.php`. Larastan 3 has an equivalent check, on by default (`noEnvCallsOutsideOfConfig`), so a Larastan project sees this error twice. This one is for projects that run PHPStan without Larastan.
-- `NoCastOnEnvRule` reports an `(int)`, `(float)` or `(bool)` cast applied directly to `env()`. Proof: `tests/PHPStan/Rules/NoCastOnEnvRuleTest.php`.
-- `NoUnescapedLikeRule` reports `where()` and `orWhere()` with a `like` operator, and the `whereLike()` family, when the pattern is a concatenation or an interpolated string that has a part not wrapped in `addcslashes()`, `str_replace()` or an `escapeLike()` method. Proof: `tests/PHPStan/Rules/NoUnescapedLikeRuleTest.php`. A pattern passed as a bare variable is not judged, because that needs data flow.
+- `env()` outside config: Larastan's `noEnvCallsOutsideOfConfig`, on by default. This package registers no rule for it.
+- The cast on `env()` (pitfall 2): review only.
+- `NoUnescapedLikeRule`, in `extension.neon`, ending `See laravel-pitfalls: edge-validation`: reports `where()` and `orWhere()` with a `like` operator, and the `whereLike()` family, when the pattern is a concatenation or an interpolated string that has a part not wrapped in `addcslashes()`, `str_replace()` or an `escapeLike()` method. Proof: `tests/PHPStan/Rules/NoUnescapedLikeRuleTest.php`. A pattern passed as a bare variable is not judged, because that needs data flow.
 
 Pitfall 4 is a review item.
