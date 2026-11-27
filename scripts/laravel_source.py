@@ -460,7 +460,9 @@ def scan_file(display: str, text: str, idx: Index, allow_syms: set[str], allow_l
         if fence is None and fm:
             fence, lang, imports = fm.group(1), fm.group(2).lower(), {}
             continue
-        if fence is not None and line.strip().startswith(fence[0] * 3) and not line.strip().strip(fence[0]):
+        # A closing fence uses the opener's character, at least as many of them, and nothing else.
+        closer = line.strip()
+        if fence is not None and len(closer) >= len(fence) and closer == fence[0] * len(closer):
             fence = None
             continue
         # Fully qualified names are unambiguous: checked everywhere.
