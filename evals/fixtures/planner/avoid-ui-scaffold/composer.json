@@ -1,0 +1,12 @@
+{
+    "name": "acme/staff-app",
+    "description": "A minimal Laravel app used as a fixture for the planner release case. It is not a real app.",
+    "type": "project",
+    "require": {
+        "php": "^8.3",
+        "laravel/framework": "^13.0"
+    },
+    "require-dev": {
+        "pestphp/pest": "^5.0"
+    }
+}

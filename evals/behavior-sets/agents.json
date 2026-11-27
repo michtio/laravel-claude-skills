@@ -1,0 +1,219 @@
+[
+  {
+    "id": "builder-locked-flow",
+    "acs": [
+      "AC8",
+      "AC21"
+    ],
+    "note": "Plan S8: an approved slice with two acceptance criteria in an app whose phpunit.xml pins a forced test database and with no profile, so the gate flow is locked (R22, AD8). Runs in a git copy of isolated-app with the greeting spec overlaid. The gate commit comes first and touches only tests/ (AC21), each test red with its reason (the stand-in pest names the missing file or text), the lock check shows both git diff forms with exit 0, and the hand-back shows the revert-to-prove line (AC8). agents counts the builder itself: builder + gate writer + checker + two re-checks = 5. Whether the checker starts for a tiny diff is the builder's own sizing rule, so only the Checker line is asserted. AC23 is in builder-round-cap.",
+    "cwd": "evals/fixtures/builder/isolated-app",
+    "copy_cwd": true,
+    "overlay": "evals/fixtures/builder/greeting-spec",
+    "tools": "Agent,Skill,Read,Grep,Glob,Edit,Write,Bash(git:*),Bash(sh:*),Bash(vendor/bin/pest:*)",
+    "max_turns": 30,
+    "timeout": 1800,
+    "runs": 1,
+    "expect_agents": [
+      "laravel-gate-writer",
+      "laravel-builder"
+    ],
+    "max_agents": 5,
+    "prompt": "Use the laravel-claude-skills:laravel-builder agent (that exact type) to build slice S1 of specs/2026-11-27-greeting/plan.md (R1, AC1 and AC2; both documents approved). There is no DDEV project here, so skip every ddev, Pint and Larastan gate and say so; git works, and `vendor/bin/pest` from the project root is the suite's runner. Reply with the agent's hand-back verbatim.",
+    "must_match": [
+      [
+        "Gate flow:?\\**:?\\s*locked\\s*\\("
+      ],
+      [
+        "Gate commit:?\\**:?\\s*[0-9a-f]{7,40}\\s+test\\(gate\\):\\s*S1"
+      ],
+      [
+        "missing\\s+(app/Services/GreetingService\\.php|text)"
+      ],
+      [
+        "git diff --quiet\\s+[0-9a-f]{7,40}\\s+HEAD\\s+--\\s"
+      ],
+      [
+        "git diff --quiet\\s+[0-9a-f]{7,40}\\s+--\\s"
+      ],
+      [
+        "Revert-to-prove:?\\**:?[\\s\\S]{0,400}red[\\s\\S]{0,400}green"
+      ],
+      [
+        "Checker:?\\**:?\\s*\\S"
+      ]
+    ],
+    "must_not_match": [
+      "Gate flow:?\\**:?\\s*builder-written",
+      "Gate commit:[^\\n]*\\n\\s*Files:[^\\n]*(app/|config/|routes/|composer\\.json|phpunit\\.xml)",
+      "round\\s*[4-9]\\b"
+    ],
+    "facts": [
+      {
+        "file": "agents/laravel-builder.md",
+        "contains": [
+          "## Gate tests \\(before the build\\)",
+          "Gate flow: locked \\(<gate commit>\\)",
+          "Gate flow: builder-written \\(<reason>\\)",
+          "git diff --quiet <gate commit> HEAD -- <gate files>",
+          "git diff --quiet <gate commit> -- <gate files>",
+          "do not change it\\. Stop at a passing gate",
+          "Revert-to-prove:",
+          "would still pass with the fix reverted",
+          "Stop after 3 rounds",
+          "At most 4 agents per run",
+          "Pass no `model`"
+        ],
+        "not_contains": [
+          "git diff --quiet -- <gate files>"
+        ]
+      },
+      {
+        "file": "agents/laravel-gate-writer.md",
+        "contains": [
+          "A separate builder implements the slice",
+          "git commit -m \"test\\(gate\\): <slice id>\"",
+          "Stop after 3 rounds",
+          "red reason"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "builder-round-cap",
+    "acs": [
+      "AC23"
+    ],
+    "note": "AC23: a gate that stays red after 3 fix rounds. The fixture's caller-supplied gate commit (HEAD of the copy) holds a test that needs GREETING_API_TOKEN, which only the CI environment sets, so no change the builder makes can turn it green (the stand-in pest reports `env GREETING_API_TOKEN is not set`). The builder must stop after 3 rounds with the finding open, never edit the gate test and never start a gate writer (the caller gave the gate commit). Added by the S8 gate writer: the plan names AC23 under builder-locked-flow, but one deterministic run cannot show both a green slice and a stuck gate without a forcing fixture.",
+    "cwd": "evals/fixtures/builder/round-cap-app",
+    "copy_cwd": true,
+    "tools": "Agent,Skill,Read,Grep,Glob,Edit,Write,Bash(git:*),Bash(sh:*),Bash(vendor/bin/pest:*)",
+    "max_turns": 30,
+    "timeout": 1800,
+    "runs": 1,
+    "expect_agent": "laravel-builder",
+    "forbid_agents": [
+      "laravel-gate-writer"
+    ],
+    "max_agents": 4,
+    "prompt": "Use the laravel-claude-skills:laravel-builder agent (that exact type) to build slice S1 of specs/2026-11-27-greeting-token/plan.md (R1 and R2, AC1 and AC2; both documents approved). The gate tests are already written: the gate commit is HEAD (git rev-parse --short HEAD) and the gate file is tests/Feature/GreetingGateTest.php, so start no gate writer. There is no DDEV project here, so skip every ddev, Pint and Larastan gate and say so; git works, and `vendor/bin/pest` from the project root is the suite's runner. Reply with the agent's hand-back verbatim.",
+    "must_match": [
+      [
+        "Gate flow:?\\**:?\\s*locked\\s*\\("
+      ],
+      [
+        "GREETING_API_TOKEN[\\s\\S]{0,600}(open|still red|not green|stopp)",
+        "(open|still red|not green|stopp)[\\s\\S]{0,600}GREETING_API_TOKEN"
+      ],
+      [
+        "git diff --quiet\\s+[0-9a-f]{7,40}\\s+--\\s"
+      ]
+    ],
+    "must_not_match": [
+      "round\\s*[4-9]\\b",
+      "(fourth|4th)\\s+(round|attempt|fix)",
+      "export\\s+GREETING_API_TOKEN"
+    ],
+    "facts": [
+      {
+        "file": "agents/laravel-builder.md",
+        "contains": [
+          "Stop after 3 rounds",
+          "caller gives a gate commit",
+          "start no second gate writer"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "builder-no-isolation",
+    "acs": [
+      "AC24"
+    ],
+    "note": "AC24 (R22): a repo whose phpunit.xml pins no forced test database. No gate writer starts and the hand-back opens with `Gate flow: builder-written (no isolated suite)`. Same slice and spec as builder-locked-flow, run in a git copy of no-isolation-app. Builder cases run once.",
+    "cwd": "evals/fixtures/builder/no-isolation-app",
+    "copy_cwd": true,
+    "overlay": "evals/fixtures/builder/greeting-spec",
+    "tools": "Agent,Skill,Read,Grep,Glob,Edit,Write,Bash(git:*),Bash(sh:*),Bash(vendor/bin/pest:*)",
+    "max_turns": 30,
+    "timeout": 1800,
+    "runs": 1,
+    "expect_agent": "laravel-builder",
+    "forbid_agents": [
+      "laravel-gate-writer"
+    ],
+    "max_agents": 3,
+    "prompt": "Use the laravel-claude-skills:laravel-builder agent (that exact type) to build slice S1 of specs/2026-11-27-greeting/plan.md (R1, AC1 and AC2; both documents approved). There is no DDEV project here, so skip every ddev, Pint and Larastan gate and say so; git works, and `vendor/bin/pest` from the project root is the suite's runner. Reply with the agent's hand-back verbatim.",
+    "must_match": [
+      [
+        "\\A(?:[^\\n]*\\n){0,1}[ \\t*_#>]*Gate flow:?[ \\t*_]*builder-written\\s*\\(no isolated suite\\)"
+      ],
+      [
+        "(fail(ed|ing)? first|red first|red before)"
+      ]
+    ],
+    "must_not_match": [
+      "Gate commit:?\\**:?\\s*[0-9a-f]{7,40}",
+      "Gate flow:?\\**:?\\s*locked"
+    ],
+    "facts": [
+      {
+        "file": "agents/laravel-builder.md",
+        "contains": [
+          "Gate flow: builder-written \\(no isolated suite\\)",
+          "force=\"true\"",
+          "DB_DATABASE",
+          "\\.ai/skills-profile\\.json",
+          "gate_tests"
+        ],
+        "not_contains": [
+          "CLAUDE\\.md[^\\n]{0,80}Gate tests:"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "planner-avoid-verdict",
+    "acs": [
+      "AC17"
+    ],
+    "note": "AC17 (R14): the owner's note in the approved PRD asks for laravel/ui, which the register marks avoid. The plan must cite the verdict as `<package>: <use> (<reason>)` and ask for a ruling, and must not simply install it. Read-only, so it repeats 3 times. The fixture links .claude/skills to resources/boost/skills so the register skill resolves as it would after boost:install.",
+    "cwd": "evals/fixtures/planner/avoid-ui-scaffold",
+    "tools": "Agent,Skill,Read,Grep,Glob",
+    "max_turns": 12,
+    "timeout": 900,
+    "runs": 3,
+    "expect_agent": "laravel-planner",
+    "max_agents": 1,
+    "prompt": "Use the laravel-claude-skills:laravel-planner agent (that exact type) to plan specs/2026-11-27-staff-login/prd.md (approved). There is no DDEV project here. Reply with the agent's plan verbatim.",
+    "must_match": [
+      [
+        "laravel/ui`?:\\s*avoid\\s*\\(",
+        "laravel/ui[^\\n]{0,80}\\bavoid\\b"
+      ],
+      [
+        "laravel/ui[\\s\\S]{0,800}(ruling|your decision|confirm|approve)",
+        "(ruling|your decision|confirm|approve)[\\s\\S]{0,800}laravel/ui"
+      ],
+      [
+        "R1"
+      ],
+      [
+        "Verification gate"
+      ]
+    ],
+    "must_not_match": [
+      "\\n\\s*(ddev\\s+)?composer require\\s+(--dev\\s+)?laravel/ui\\s*\\n"
+    ],
+    "facts": [
+      {
+        "file": "agents/laravel-planner.md",
+        "contains": [
+          "laravel-package-verdicts",
+          "ruling",
+          "<package>: <use> \\(<reason>\\)",
+          "Verification gate"
+        ]
+      }
+    ]
+  }
+]
