@@ -20,11 +20,18 @@ files on disk, so git-ignored ones count too. `verify` compares them with the
 snapshot and prints `changed: <path>` for each one created, changed or deleted.
 `wipers` prints `<path>: <trait>` for each test file under tests/ that names a
 database-wiping trait (RefreshDatabase, DatabaseMigrations, DatabaseTruncation,
-LazilyRefreshDatabase), a new file included: on a suite that is not isolated such
-a test wipes the configured database.
+LazilyRefreshDatabase), else `<path>: <command>` for one that calls a wiping artisan
+command (migrate:fresh, migrate:refresh, migrate:reset, db:wipe) through
+`artisan(...)` or `Artisan::call(...)`, a new file included: on a suite that is not
+isolated such a test wipes the configured database. `migrate` and `migrate:status`
+are not flagged.
+The command check is a tripwire on the plain call forms; known false negatives: a
+command reached through exec(), shell_exec() or Process (`php artisan migrate:fresh`),
+a named or array argument (`Artisan::call(command: 'db:wipe')`, `['migrate:fresh']`),
+a variable or concatenation, `$kernel->call(...)` and `Artisan::queue(...)`.
 
-Exit 0: snapshot written, nothing changed, or no wiping trait. Exit 1: a file
-changed, or a wiping trait found. Exit 2: usage error, a missing --root directory,
+Exit 0: snapshot written, nothing changed, or no wiping trait or command. Exit 1: a file
+changed, or a wiping trait or command found. Exit 2: usage error, a missing --root directory,
 or an unreadable snapshot. Proved by tests/gate/test_suite_guard.py.
 Python 3.9+, standard library only.
 """
@@ -40,6 +47,9 @@ import sys
 WATCHED = ("phpunit.xml", "phpunit.xml.dist", "tests/Pest.php", "tests/TestCase.php", ".env", ".env.testing",
            "testbench.yaml", "config/database.php")
 WIPERS = ("LazilyRefreshDatabase", "RefreshDatabase", "DatabaseMigrations", "DatabaseTruncation")
+# An artisan call that wipes the database: `artisan(...)` (`$this->artisan(...)`) or `Artisan::call(...)` (or callSilently), either
+# quote, the command first in the string, arguments after it allowed; `migrate` and `migrate:status` wipe nothing.
+WIPING_CALL = re.compile(r"""(?:\bartisan|\bArtisan::call(?:Silently)?)\s*\(\s*(['"])\s*(migrate:fresh|migrate:refresh|migrate:reset|db:wipe)(?=[\s'"])""")
 BOOTSTRAP = re.compile(r"""\bbootstrap\s*=\s*["']([^"']+)["']""")
 
 
@@ -85,7 +95,8 @@ def state(root: str, paths) -> dict:
 
 
 def wipers(root: str) -> list:
-    """`<path>: <trait>` for each PHP file under tests/ naming a wiping trait, in path order."""
+    """`<path>: <trait>` for each PHP file under tests/ naming a wiping trait, else `<path>: <command>` for one
+    calling a wiping artisan command, in path order (test_suite_guard, test_wiping_commands)."""
     hits = []
     tests = os.path.join(root, "tests")
     for directory, _dirs, names in sorted(os.walk(tests)):
@@ -96,6 +107,9 @@ def wipers(root: str) -> list:
             with open(full, encoding="utf-8", errors="replace") as fh:
                 text = fh.read()
             found = next((t for t in WIPERS if re.search(rf"\b{t}\b", text)), None)
+            if not found:
+                call = WIPING_CALL.search(text)
+                found = call.group(2) if call else None
             if found:
                 hits.append(f"{os.path.relpath(full, root).replace(os.sep, '/')}: {found}")
     return hits

@@ -207,19 +207,22 @@ final class ProfileValidator
     }
 
     /**
-     * Why a step name or command is refused for the control characters it holds, or
-     * null when it holds none. Refused: C0 controls (U+0000 to U+001F, ESC
-     * included), U+007F and C1 controls (U+0080 to U+009F), which could rewrite the
-     * plan on a terminal (a carriage return or a cursor escape can hide a command
-     * behind a harmless line). A command may hold tabs and newlines (a multi-line
-     * command is shown as one block); a name may not. The reason never repeats the
-     * characters it refuses.
+     * Why a step name or command is refused for the hidden characters it holds, or
+     * null when it holds none. Refused: every Unicode control, format, surrogate,
+     * private-use or unassigned character (category C*: C0 and C1 controls, ESC,
+     * a right-to-left override, a zero-width space) and every line or paragraph
+     * separator (Zl, Zp), as scripts/builders_check.py refuses for builder
+     * commands, since they could rewrite or reorder the plan on a terminal (a
+     * carriage return or a cursor escape can hide a command behind a harmless
+     * line). A command may hold tabs and newlines (a multi-line command is shown
+     * as one block); a name may not. The reason never repeats the characters it
+     * refuses. Proved by tests/Profile/StepHiddenCharactersTest.php.
      *
      * @author michtio
      */
     public static function controlCharacters(string $value, bool $command): ?string
     {
-        $pattern = $command ? '/[\x{00}-\x{08}\x{0B}-\x{1F}\x{7F}-\x{9F}]/u' : '/[\x{00}-\x{1F}\x{7F}-\x{9F}]/u';
+        $pattern = $command ? '/(?![\t\n])[\p{C}\p{Zl}\p{Zp}]/u' : '/[\p{C}\p{Zl}\p{Zp}]/u';
         $found = preg_match($pattern, $value);
 
         if ($found === 0) {
@@ -231,8 +234,8 @@ final class ProfileValidator
         }
 
         return $command
-            ? 'must not hold control characters (a carriage return, an escape sequence, NUL and the like); only tabs and newlines are allowed'
-            : 'must not hold control characters (a newline, a tab, a carriage return, an escape sequence and the like)';
+            ? 'must not hold control, format or separator characters (a carriage return, an escape sequence, a right-to-left override, a zero-width space and the like); only tabs and newlines are allowed'
+            : 'must not hold control, format or separator characters (a newline, a tab, an escape sequence, a right-to-left override, a zero-width space and the like)';
     }
 
     // Private Methods

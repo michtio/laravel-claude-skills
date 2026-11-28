@@ -176,7 +176,7 @@ It never runs `git stash`, `git checkout -- <files>`, `git restore` or `git add`
 
 ### Fixture-app lock (amendment to `test_s5`, `test_s6a`, `test_s6b`)
 
-The fixture tests share one DDEV project, `lcs-fixture-app`, and never tore it down or serialised against a second run, so two overlapping gate runs collided (`ddev-lcs-fixture-app-web` in use, a project directory deleted under the other run). `tests/gate/ddev_lock.py` is an flock on a temp file; each of the four classes that use the app takes it in `setUpClass` and releases it as a class cleanup, so a second run waits. A killed run drops the lock with its process. The project is left running between classes on purpose (starting it is idempotent).
+The fixture tests share one DDEV project, `lcs-fixture-app`, and never tore it down or serialised against a second run, so two overlapping gate runs collided (`ddev-lcs-fixture-app-web` in use, a project directory deleted under the other run). `tests/gate/ddev_lock.py` is an flock on a temp file; each of the four classes that use the app takes it in `setUpClass` and releases it as a class cleanup, so a second run waits. A killed run drops the lock with its process. The project is left running between classes on purpose (starting it is idempotent). Amendment (S10b round 2): the project is named per checkout, `lcs-fixture-app-<digest>` (`ddev_lock.FIXTURE_PROJECT`, the digest of the lock file name), so another checkout or worktree never re-registers it, and `ddev_lock.start()` raises with the ddev output when `ddev config` or `ddev start` fails; pinned by `tests/gate/test_fixture_projects.py`.
 
 ## 7. Not covered here
 

@@ -13,7 +13,7 @@ sh scripts/check.sh
 ddev exec vendor/bin/pest
 ```
 
-Never run two gate runs at once: `test_s9b_ddev.py` takes the shared lock (`tests/gate/ddev_lock.py`), builds a DDEV project (`lcs-s9b-package` in `fixtures/.s9b-package`) and deletes it afterwards (`ddev delete -Oy`).
+Never run two gate runs at once: `test_s9b_ddev.py` takes the shared lock (`tests/gate/ddev_lock.py`), builds a DDEV project (`lcs-s9b-package-<checkout digest>`, `ddev_lock.project("lcs-s9b-package")`, in `fixtures/.s9b-package`) and deletes it afterwards (`ddev delete -Oy`).
 
 ## Split
 

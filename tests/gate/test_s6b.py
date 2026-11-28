@@ -60,7 +60,7 @@ def ensure_registered(app: Path) -> None:
     `ddev delete -Oy` unregisters a project, and a plain `ddev start` in its directory then
     falls back to the enclosing repository's own project.
     """
-    subprocess.run(["ddev", "config", "--project-name=lcs-fixture-app"], cwd=app, capture_output=True, text=True)
+    subprocess.run(["ddev", "config", f"--project-name={ddev_lock.FIXTURE_PROJECT}"], cwd=app, capture_output=True, text=True)
 
 
 @unittest.skipUnless(shutil.which("ddev"), "needs ddev: the suite runs inside the fixture app's DDEV project, never on the host")
@@ -78,7 +78,9 @@ class AppIsolationInDdev(unittest.TestCase):
         if r.returncode != 0:
             raise RuntimeError("make-fixture-app.sh --force failed: " + (r.stdout + r.stderr)[-2000:])
         ensure_registered(APP)
-        ddev(["start"], APP)
+        r = ddev(["start"], APP)
+        if r.returncode != 0:
+            raise RuntimeError("ddev start failed: " + (r.stdout + r.stderr)[-2000:])
         cls.saved: dict[str, bytes | None] = {}
         for rel in TOUCHED:
             p = APP / rel
@@ -290,6 +292,11 @@ class PackageGateInDdev(unittest.TestCase):
             "        $this->assertFalse(filter_var(env('PAYMENTS_LIVE'), FILTER_VALIDATE_BOOLEAN));\n    }\n}\n"
         )
         (self.pkg / ".env").write_text("PAYMENTS_LIVE=true\n")
+        # Its own repository (gitleaks ruling 2026-11-28), so the gate's secret scan covers the fixture, not this pack's history.
+        ident = ["-c", "user.name=fixture", "-c", "user.email=fixture@example.com", "-c", "commit.gpgsign=false"]
+        subprocess.run(["git", "init", "-q"], cwd=self.pkg, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=self.pkg, check=True)
+        subprocess.run(["git", *ident, "commit", "-q", "-m", "chore: package fixture"], cwd=self.pkg, check=True)
 
     def tearDown(self):
         shutil.rmtree(self.pkg, ignore_errors=True)

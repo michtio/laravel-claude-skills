@@ -4,7 +4,7 @@
 # symlinked). tests/gate/fixture-app.sh runs against it.
 #
 #   bash scripts/make-fixture-app.sh           # create (refuses when fixtures/app exists)
-#   bash scripts/make-fixture-app.sh --force   # stop and delete the old DDEV project first
+#   bash scripts/make-fixture-app.sh --force   # stop and delete this checkout's DDEV project first
 #
 # Everything PHP runs inside DDEV; nothing runs php or composer on the host.
 # fixtures/app/ is git-ignored: the app is generated, never committed.
@@ -17,9 +17,17 @@
 
 set -euo pipefail
 
-repo=$(cd "$(dirname "$0")/.." && pwd)
+repo=$(cd "$(dirname "$0")/.." && pwd -P)
 app="$repo/fixtures/app"
-project=lcs-fixture-app
+# One DDEV project per checkout: the first 10 hex characters of the sha1 of the
+# checkout's real path, the digest tests/gate/ddev_lock.py uses for its lock and
+# FIXTURE_PROJECT, so two checkouts or worktrees never share a project.
+if command -v sha1sum >/dev/null 2>&1; then
+    digest=$(printf '%s' "$repo" | sha1sum | cut -c1-10)
+else
+    digest=$(printf '%s' "$repo" | shasum -a 1 | cut -c1-10)
+fi
+project="lcs-fixture-app-$digest"
 package=michtio/laravel-claude-skills
 
 force=0
@@ -83,4 +91,12 @@ cat > boost.json <<JSON
 JSON
 
 ddev exec php artisan boost:install --guidelines --skills --mcp --no-interaction
+
+# The app is its own git repository, as a consumer project is, so its
+# `composer test` secret scan (gitleaks detect --source .) covers the app's
+# history only, never this package's history one directory up.
+git init -q
+git add -A
+git -c user.name=fixture -c user.email=fixture@example.com -c commit.gpgsign=false \
+    commit -q -m "chore: fixture app"
 echo "fixtures/app ready ($project)"

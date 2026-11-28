@@ -6,7 +6,7 @@ actionlint check); skips with a reason without them. Never runs php or composer 
 
 The package is tests/Fixtures/s9b-package: example/s9b-package, an empty src, no tests directory,
 no CLAUDE.md, a profile with `test_database: ddev`, `ci: true` and `php_matrix: [8.3, 8.4]`. It
-gets its own DDEV project (lcs-s9b-package, MySQL 8.0, PHP 8.4) in fixtures/.s9b-package, requiring
+gets its own DDEV project (lcs-s9b-package-<checkout digest>, MySQL 8.0, PHP 8.4) in fixtures/.s9b-package, requiring
 this package through a path repository, as scripts/make-fixture-app.sh does for the app. The run:
 
   1. `testbench claude-skills:setup --yes` exits 0: the DDEV hook and credentials, the forced
@@ -40,7 +40,7 @@ import ddev_lock
 
 REPO = Path(__file__).resolve().parent.parent.parent
 FIXTURE = REPO / "tests/Fixtures/s9b-package"
-PROJECT = "lcs-s9b-package"
+PROJECT = ddev_lock.project("lcs-s9b-package")
 DIR = REPO / "fixtures/.s9b-package"
 DATABASE = "s9b_package_test"
 IMAGE = "rhysd/actionlint:1.7.7"

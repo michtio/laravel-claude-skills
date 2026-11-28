@@ -19,6 +19,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Full history: gate tests run code from earlier commits (git show <commit>:<path>).
+          fetch-depth: 0
 
       - uses: actions/setup-python@v7
         with:
@@ -42,6 +45,9 @@ jobs:
       CI: "true"
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Full history: gate tests run code from earlier commits (git show <commit>:<path>).
+          fetch-depth: 0
 
       - uses: actions/setup-python@v7
         with:
