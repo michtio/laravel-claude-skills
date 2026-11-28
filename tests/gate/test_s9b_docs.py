@@ -101,7 +101,7 @@ class Readme(unittest.TestCase):
         body = self.install_with_heading()
         self.assertRegex(body, r'"type"\s*:\s*"vcs"')
         self.assertIn("https://github.com/michtio/laravel-claude-skills", body)
-        self.assertRegex(body, r'"michtio/laravel-claude-skills"\s*:\s*"dev-main"')
+        self.assertRegex(body, r'"michtio/laravel-claude-skills"\s*:\s*"dev-develop"')
         self.assertRegex(body, r"(?i)first (tag|release)", "say it is for the time before the first tag")
         self.assertRegex(body, r"(?is)lock[^.]{0,160}(pin|commit)")
 
