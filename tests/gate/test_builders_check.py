@@ -3,7 +3,7 @@
 Requirements R18 (the outside builder named in the profile gets the brief) and R27 (an unusable builder is
 skipped and reported, never silently). Builder-added test (G3), beside the S10 gate: a profile is a file in the
 repository, so a builder name or timeout must never reach a shell line unchecked; names must match
-^[A-Za-z0-9._-]{1,64}$, commands are one line with no control characters, and timeouts are numbers above 0.
+^[A-Za-z0-9._-]{1,64}$ in full (a trailing newline is refused, as the setup's ProfileValidator does), commands are one line with no control characters, and timeouts are numbers above 0.
 Standard library only.
 
     python3 -m unittest discover -s tests/gate -p 'test_builders_check.py'
@@ -62,6 +62,8 @@ class UnsafeBuilders(unittest.TestCase):
         cases = {
             "name with a command substitution": ({"name": "x$(touch PWNED)", "command": "true"}, "name"),
             "name with a space": ({"name": "a b", "command": "true"}, "name"),
+            "name with a trailing newline": ({"name": "local-ai\n", "command": "true"}, "name"),
+            "name with a single quote": ({"name": "a'b", "command": "true"}, "name"),
             "name too long": ({"name": "a" * 65, "command": "true"}, "name"),
             "name not a string": ({"name": 7, "command": "true"}, "name"),
             "missing command": ({"name": "a"}, "command"),
