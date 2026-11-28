@@ -106,8 +106,14 @@ class Passkeys(unittest.TestCase):
                 label="synced passkeys report counter 0, so the counter check cannot catch a replay")
         pitfall(self, 106, r"challenge", r"single.use", r"(consumer|your|the app)",
                 label="laravel/passkeys stores no challenge; single use of the options is the consumer's job")
-        pitfall(self, 106, r"passkey", r"password\.confirm", r"(full user|user model)",
-                label="its routes use password.confirm and its events carry the full user")
+        # laravel/passkeys v0.3.0 (laravel/passkeys-server, src/Events/PasskeyVerified.php and PasskeyRegistered.php):
+        # both events `use SerializesModels`, so a queued listener's payload holds the model's class and key only.
+        claim = first_line(files("pitfalls"), (r"Passkey(Verified|Registered)", r"full user"))
+        self.assertIsNone(claim, f"a pitfall says the passkey events carry the full user: {claim}")
+        pitfall(self, 106, r"passkey", r"password\.confirm",
+                label="its management routes use password.confirm")
+        pitfall(self, 106, r"Passkey(Verified|Registered)", r"user model", r"SerializesModels",
+                label="its events carry the user model with SerializesModels, so a queued listener carries only the class and key")
 
 
 if __name__ == "__main__":
