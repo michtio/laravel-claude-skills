@@ -82,7 +82,7 @@ An invalid profile is refused before anything is planned: the setup exits 1 with
 | `version` | integer, required | setup | The profile format version. Always `1`. |
 | `managed_by` | object | nobody (informational) | The tool that wrote the file: `managed_by.tool` and `managed_by.version`, both strings. |
 | `gate_tests` | `locked` or `builder-written` | agents | Who writes the gate tests of a slice: `locked`, a separate gate writer whose tests the builder cannot change, or `builder-written`. With no value, the builder uses `locked` when the test suite is isolated (`phpunit.xml` pins `DB_DATABASE` with `force="true"`). `locked` never applies to a suite that is not isolated: the builder then says `Gate flow: builder-written (no isolated suite)`. |
-| `builders` | list of objects | agents | Outside builders, tried in order (see Outside builders below). Each has a `name` (string), a `command` (string) and an optional `timeout_minutes` (a number above 0; 30 when left out). |
+| `builders` | list of objects | agents | Outside builders, tried in order (see Outside builders below). Each has a `name` (string), a `command` (string) and an optional `timeout_minutes` (a number above 0; 30 when left out). The gated build skips, and reports, a builder whose name does not match `^[A-Za-z0-9._-]{1,64}$` or whose command holds a control character. |
 | `setup` | object | setup | Extra project setup. `setup.steps` is the list of extra steps (below). |
 | `verdicts` | object | agents | Package verdicts that take precedence over the package's register (below). |
 | `craft` | object | Craft pack | Craft pack keys, ignored here: `craft.answers` (`hosting`, a string; `passwordless`, a boolean; `dev_root`, a string) and `craft.choices` (`chrome_devtools_mcp` and `craft_mcp`, booleans). They are only checked against the schema. |
@@ -94,7 +94,7 @@ An invalid profile is refused before anything is planned: the setup exits 1 with
 
 - `command` is called as `<command> <brief-file> <handback-file>`: the two paths are appended to the command, so the command holds no placeholder. It runs from the project root.
 - Exit 0 means done, exit 3 unavailable, any other exit failed; no exit within `timeout_minutes` counts as failed.
-- Before running any of them, the gated build prints each builder as `<name>: <command> (timeout <n> min)` and waits for your yes to that list. A request that names every command exactly as the profile has it counts as the yes. Without a yes, with a partial yes, or in an unattended run, no outside builder runs and `laravel-builder` builds the slice; the report says `Skipped: <name> (not confirmed)` for each.
+- Before running any of them, the gated build prints each builder as `<name>: <command> (timeout <n> min)` and waits for your yes to that list. A request counts as the yes only when it names every command exactly as the profile has it. Without a yes, with a partial yes, or in an unattended run, no outside builder runs and `laravel-builder` builds the slice; the report says `Skipped: <name> (not confirmed)` for each.
 
 The full protocol (exit codes, the reset before each builder, the checks on the result) is in [outside-builders.md](outside-builders.md); the brief and hand-back formats are in [brief-format.md](brief-format.md). The setup itself never runs a builder.
 

@@ -1,0 +1,75 @@
+[
+ {
+  "id": "gated-build-not-confirmed",
+  "acs": [
+   "AC28"
+  ],
+  "note": "Owner ruling 2026-11-28 (R18, R27): gated builds ask before running outside-builder commands, and an unattended run falls back to the pack's builder. Same fixture as gated-build-outside, but the prompt approves only ./bin/stub-ok, a partial yes, and forbids questions. Expected: laravel-gate-writer commits test(gate): S1 first; no stub runs (no stub commit, no STUB-FAIL-PARTIAL.txt, no builder exit line); the report says Skipped: <name> (not confirmed) for all three builders; laravel-builder builds the slice from the same brief against the gate commit and the report names it as the builder. agents: the gate writer, laravel-builder, and laravel-builder's checker with up to two re-checks = 5. Runs once.",
+  "cwd": "evals/fixtures/gated-build",
+  "copy_cwd": true,
+  "tools": "Agent,Skill,Read,Grep,Glob,Edit,Write,Bash",
+  "max_turns": 40,
+  "timeout": 1800,
+  "runs": 1,
+  "expect_agents": [
+   "laravel-gate-writer",
+   "laravel-builder"
+  ],
+  "max_agents": 5,
+  "prompt": "Use the laravel-gated-build skill to build slice S1 of specs/2026-11-27-greeting/plan.md (R1, AC1 and AC2; both documents approved). The project's .ai/skills-profile.json names outside builders. There is no DDEV project and no Laravel install here: the Pest command in every brief is `vendor/bin/pest`, run from the project root (a small stand-in runner), so skip every ddev, Pint and Larastan gate and say so. git works. I have read the profile's builder commands and say yes to running only `./bin/stub-ok`. Do not stop to ask questions. When the run ends, run `git log --reverse --format='LOG|%s'` and `git status --short | sed 's/^/STATUS|/'` and paste both outputs, unprefixed lines included, in a code block after the final report. Reply with the report verbatim, never a summary of it.",
+  "must_match": [
+   [
+    "LOG\\|test\\(gate\\): S1"
+   ],
+   [
+    "Gate flow:?\\**:?\\s*locked"
+   ],
+   [
+    "stub-unavailable[^\\n]{0,40}\\(?not confirmed"
+   ],
+   [
+    "stub-fail[^\\n]{0,40}\\(?not confirmed"
+   ],
+   [
+    "stub-ok[^\\n]{0,40}\\(?not confirmed"
+   ],
+   [
+    "Builder:?\\**:?\\s*laravel-builder"
+   ],
+   [
+    "Lock check[^\\n]{0,160}exit\\s*0"
+   ]
+  ],
+  "must_not_match": [
+   "LOG\\|[^\\n]*\\(stub-(ok|fail|bad-handback)\\)",
+   "STATUS\\|\\s*\\?\\?\\s+STUB-FAIL-PARTIAL",
+   "Builder:?\\**:?\\s*stub-",
+   "builder exit:\\s*\\d"
+  ],
+  "facts": [
+   {
+    "file": "resources/boost/skills/laravel-gated-build/SKILL.md",
+    "contains": [
+     "<name>: <command> \\(timeout <n> min\\)",
+     "counts as that yes only when it names every command exactly as the profile has it",
+     "Skipped: <name> \\(not confirmed\\)",
+     "never re-read the profile",
+     "builders_check\\.py"
+    ]
+   },
+   {
+    "file": "docs/outside-builders.md",
+    "contains": [
+     "Skipped: <name> \\(not confirmed\\)",
+     "partial yes"
+    ]
+   },
+   {
+    "file": "docs/profile.md",
+    "contains": [
+     "Skipped: <name> \\(not confirmed\\)"
+    ]
+   }
+  ]
+ }
+]

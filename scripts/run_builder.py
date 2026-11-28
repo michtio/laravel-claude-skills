@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """Run one outside builder per docs/outside-builders.md, with its timeout (R18, R27).
 
+    python3 scripts/run_builder.py --builders <file> --name <name> [--log <file>] <brief-file> <handback-file>
     python3 scripts/run_builder.py --cwd <project-root> --timeout-minutes <n> \
         --command '<command>' [--log <file>] <brief-file> <handback-file>
+
+With --builders, the project root, the timeout and the command come from the file
+scripts/builders_check.py wrote, and --name must match ^[A-Za-z0-9._-]{1,64}$: the
+gated build uses this form, so no value from the profile is quoted into its shell
+line. The second form is for a team tool that already holds the values.
 
 Runs `<command> <brief-file> <handback-file>` through sh, from the project root,
 in its own process group. The brief and hand-back paths are made absolute first.
@@ -18,8 +24,9 @@ exits 128 + the signal number.
 Prints one last line, `builder exit: <n>` or `builder exit: timeout`. Exit codes:
     the builder's own exit code (128 + n when a signal killed it)
     124  timeout (failed, per the protocol)
-    64   usage error in this script (bad arguments, missing --cwd directory,
-         unwritable --log); never a builder result
+    64   usage error in this script (bad arguments, both forms or neither, a name
+         not in --builders, missing --cwd directory, unwritable --log); never a
+         builder result
 Proved by tests/gate/test_run_builder.py.
 
 Ported from craftcms-claude-skills (bin/run_builder.py), so one team tool serves
@@ -28,7 +35,9 @@ both packs. Python 3.9+, standard library only.
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -36,6 +45,7 @@ import time
 
 USAGE_ERROR = 64
 TIMEOUT = 124
+NAME = re.compile(r"[A-Za-z0-9._-]{1,64}")
 
 
 class Usage(argparse.ArgumentParser):
@@ -45,6 +55,23 @@ class Usage(argparse.ArgumentParser):
         self.print_usage(sys.stderr)
         print(f"run_builder.py: {message}", file=sys.stderr)
         sys.exit(USAGE_ERROR)
+
+
+def from_builders(ap: Usage, path: str, name: str) -> tuple:
+    """The project root, timeout and command of one checked builder (test_run_builder: BuildersFile).
+
+    The caller passes only a name that matches the builders check's pattern and paths it made itself, so no
+    profile value is quoted into a shell line; a name that is unsafe or not in the file is a usage error.
+    """
+    if not NAME.fullmatch(name):
+        ap.error(f"--name must match {NAME.pattern}")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        builder = next(b for b in data["builders"] if b["name"] == name)
+        return data["project_root"], float(builder["timeout_minutes"]), builder["command"]
+    except (OSError, ValueError, KeyError, TypeError, StopIteration) as err:
+        ap.error(f"no builder {name} in {path} ({type(err).__name__})")
 
 
 def group_alive(pgid: int) -> bool:
@@ -82,13 +109,22 @@ def kill_group(pgid: int, proc: subprocess.Popen) -> None:
 
 def main() -> int:
     ap = Usage(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--cwd", required=True, help="the project root")
-    ap.add_argument("--timeout-minutes", type=float, required=True)
-    ap.add_argument("--command", required=True, help="the builder's command from the profile")
+    ap.add_argument("--cwd", help="the project root")
+    ap.add_argument("--timeout-minutes", type=float)
+    ap.add_argument("--command", help="the builder's command")
+    ap.add_argument("--builders", help="the file scripts/builders_check.py wrote")
+    ap.add_argument("--name", help="the builder to run from --builders")
     ap.add_argument("--log", help="file for the builder's stdout and stderr")
     ap.add_argument("brief")
     ap.add_argument("handback")
     args = ap.parse_args()
+    direct = (args.cwd, args.timeout_minutes, args.command)
+    if args.builders is not None or args.name is not None:
+        if any(v is not None for v in direct) or args.builders is None or args.name is None:
+            ap.error("use --builders with --name, or --cwd, --timeout-minutes and --command, not both")
+        args.cwd, args.timeout_minutes, args.command = from_builders(ap, args.builders, args.name)
+    elif any(v is None for v in direct):
+        ap.error("--cwd, --timeout-minutes and --command are required without --builders")
     if not args.timeout_minutes > 0 or not os.path.isdir(args.cwd):
         ap.error("--timeout-minutes must be above 0 and --cwd a directory")
     brief, handback = os.path.abspath(args.brief), os.path.abspath(args.handback)

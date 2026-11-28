@@ -10,7 +10,7 @@ A brief is a markdown file. The header fields come first, one per line, as `Name
 |---|---|
 | `Slice:` | The slice id, for example `S1`. |
 | `Gate commit:` | The commit that holds the locked gate tests, or `none` when the builder writes its own tests. |
-| `Gate files:` | The test files in that commit, separated by single spaces. |
+| `Gate files:` | The test files in that commit, on this one line, separated by single spaces. A path with a space cannot be listed, so a gate file never has one. |
 | `Pest command:` | The command that runs the gate, for example `ddev exec vendor/bin/pest` or `vendor/bin/pest`. Run it exactly as written, from the project root. |
 | `Project root:` | The absolute path of the project. Work only inside it. |
 | `Laravel version:` | The Laravel version the code must target. |
@@ -34,6 +34,8 @@ Then two more sections:
   - Stop at a passing gate.
   - At most 3 rounds.
   - Commit your work before writing the hand-back.
+
+When the suite is not isolated (the tests can reach the dev database), `## Rules` adds a fifth rule: "The suite is not isolated: never run a test that uses `RefreshDatabase`, `DatabaseMigrations`, `DatabaseTruncation` or `LazilyRefreshDatabase`, and never run `migrate:fresh` or `db:wipe`." A builder never changes the files that decide isolation (`phpunit.xml`, `phpunit.xml.dist`, `tests/Pest.php`, `tests/TestCase.php`, `.env`, `.env.testing`); the caller compares them before every gate run, and a change disqualifies the builder.
 
 A later round appends a `## Findings (round <n>)` section with what sent the slice back: uncommitted files, the hand-back checker's messages, the red gate output or review findings.
 

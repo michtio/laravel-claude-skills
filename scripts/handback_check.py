@@ -15,7 +15,8 @@ at column 0 and outside code fences:
 Exit 0: well formed. Exit 1: a required line is missing, bad, duplicated or
 unknown, one message per problem (`missing line: ...`, `bad line: ...`,
 `bad status: ...`, `duplicate line: ...`, `unknown line: ...`, `gate touched: ...`).
-Exit 2: usage error, an unreadable file, or a brief with no R ids.
+Exit 2: usage error, an unreadable file, a brief with no R ids, or a brief whose
+`Gate commit:` is missing or neither a sha nor `none`.
 
 It checks form only: a FAIL or PENDING status is well formed; whether the slice
 passed is the gated build's decision. The brief's `Gate commit:` binds the flow: a
@@ -76,7 +77,8 @@ def requirement_ids(brief_lines: list) -> list:
 
 
 def gate_commit(brief_lines: list):
-    """The brief's gate commit: a lowercase sha, 'none', or None when the brief binds nothing."""
+    """The brief's gate commit: a lowercase sha, 'none', or None when the brief binds nothing (a usage error,
+    test_handback_flow_binding: BriefMustBindTheFlow)."""
     for line in brief_lines:
         m = re.match(r"^Gate commit:[ \t]*(\S+)", line)
         if not m:
@@ -104,7 +106,7 @@ def check_flow(lines: list, bound) -> tuple:
     sha = (m.group(1) or "").lower()
     if bound == "none" and sha:
         problems.append("bad line: Gate flow (the brief has no gate commit, so the flow must be builder-written)")
-    elif bound not in (None, "none") and (not sha or not (sha.startswith(bound) or bound.startswith(sha))):
+    elif bound != "none" and (not sha or not (sha.startswith(bound) or bound.startswith(sha))):
         problems.append(f"bad line: Gate flow (must be locked ({bound}) as in the brief)")
     return problems, bool(sha)
 
@@ -171,7 +173,12 @@ def main(argv: list) -> int:
         print(f"{args[1]}: no R ids (## R<n> headings) in the brief", file=sys.stderr)
         return 2
 
-    problems, locked = check_flow(lines, gate_commit(brief))
+    bound = gate_commit(brief)
+    if bound is None:
+        print(f"{args[1]}: no Gate commit (sha or none) in the brief", file=sys.stderr)
+        return 2
+
+    problems, locked = check_flow(lines, bound)
     if locked:
         problems += check_locks(lines)
     problems += check_requirements(lines, ids)
