@@ -22,7 +22,7 @@ Until the first tag (`1.0.0-beta.1`) the pack is not on Packagist. Require it fr
         {"type": "vcs", "url": "https://github.com/michtio/laravel-claude-skills"}
     ],
     "require-dev": {
-        "michtio/laravel-claude-skills": "dev-main"
+        "michtio/laravel-claude-skills": "dev-develop"
     }
 }
 ```
