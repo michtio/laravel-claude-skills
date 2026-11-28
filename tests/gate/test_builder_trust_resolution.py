@@ -137,7 +137,8 @@ class ShellResolution(ResolutionTest):
                 proc = box.add(builders, "local", env=env)
                 self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
                 self.assertFalse(box.trust_file.exists())
-                self.assertEqual(self.lines(box, builders, env, unattended=False), ([line("local", command)], []))
+                self.assertEqual(self.lines(box, builders, env, unattended=False),
+                                 ([line("local", command) + " (cannot be trusted: unresolvable)"], []))
 
 
 class AppRunners(ResolutionTest):
