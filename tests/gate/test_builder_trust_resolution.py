@@ -166,8 +166,8 @@ class TrustFileInAGitTree(ResolutionTest):
         return tree
 
     def valid_copy(self, destination: Path) -> Path:
-        """A trust file that trusts LOCAL-like `printf` for this project, made outside every tree, copied in."""
-        command = "printf ran > RAN.txt; :"
+        """A trust file that trusts LOCAL-like `touch` for this project, made outside every tree, copied in."""
+        command = "touch RAN.txt"
         builders = self.trust_it(self.box, command, self.box.env())
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(self.box.trust_file, destination)
@@ -176,7 +176,7 @@ class TrustFileInAGitTree(ResolutionTest):
 
     def test_add_refuses_a_trust_file_in_a_git_work_tree(self):
         target = self.other_tree() / "config/trusted-builders.json"
-        builders = self.box.builders({"name": "local", "command": "printf ran > RAN.txt; :"})
+        builders = self.box.builders({"name": "local", "command": "touch RAN.txt"})
         proc = self.box.add(builders, "local", env=self.box.env(trust=target))
         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
         self.assertFalse(target.exists())
@@ -201,7 +201,7 @@ class TrustFileKinds(ResolutionTest):
     """Ruling 5: a FIFO trust file never blocks; save fsyncs before it replaces."""
 
     def test_a_fifo_trust_file_is_refused_without_blocking(self):
-        builders = self.box.builders({"name": "local", "command": "printf ran > RAN.txt; :"})
+        builders = self.box.builders({"name": "local", "command": "touch RAN.txt"})
         self.box.trust_file.parent.mkdir(parents=True)
         os.mkfifo(self.box.trust_file, 0o600)
         out = self.box.work / "run.json"
@@ -236,7 +236,7 @@ class OriginQueryAndFragment(ResolutionTest):
 
     def test_the_query_and_fragment_are_never_stored_and_a_changed_query_keeps_the_trust(self):
         git(self.box.repo, "remote", "set-url", "origin", f"https://example.com/acme/app.git?private_token={PASSWORD}#frag")
-        command = "printf ran > RAN.txt; :"
+        command = "touch RAN.txt"
         builders = self.trust_it(self.box, command, self.box.env())
         stored = self.box.trust_file.read_text(encoding="utf-8")
         self.assertIn('"https://example.com/acme/app.git"', stored)
