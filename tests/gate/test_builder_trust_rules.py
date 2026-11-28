@@ -195,7 +195,7 @@ class RepoCodeAtThePrompt(TrustTest):
         self.assertFalse(self.box.trust_file.exists())
         proc, names = self.box.check(builders)
         self.assertEqual((proc.stdout.splitlines(), names),
-                         (["local: bash -c 'touch RAN.txt' (timeout 30 min)"], []))
+                         (["local: bash -c 'touch RAN.txt' (timeout 30 min) (cannot be trusted: inline code)"], []))
 
 
 class Credentials(unittest.TestCase):
