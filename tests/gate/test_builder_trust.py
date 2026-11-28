@@ -57,8 +57,8 @@ TRUST_ENV = "LARAVEL_CLAUDE_SKILLS_TRUST_FILE"
 HOME_TRUST = ".config/laravel-claude-skills/trusted-builders.json"
 XDG_TRUST = "laravel-claude-skills/trusted-builders.json"
 ORIGIN = "https://example.com/acme/app.git"
-LOCAL = {"name": "local", "command": "printf ran > RAN-local.txt; :"}
-TEAM = {"name": "team", "command": "printf ran > RAN-team.txt; :"}
+LOCAL = {"name": "local", "command": "touch RAN-local.txt"}
+TEAM = {"name": "team", "command": "touch RAN-team.txt"}
 
 
 class Sandbox:
@@ -144,7 +144,7 @@ class Confirming(TrustTest):
         builders = self.box.builders(LOCAL)
         proc, names = self.box.check(builders)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        self.assertEqual(proc.stdout.splitlines(), ["local: printf ran > RAN-local.txt; : (timeout 30 min)"])
+        self.assertEqual(proc.stdout.splitlines(), ["local: touch RAN-local.txt (timeout 30 min)"])
         self.assertEqual(names, [])
         written = json.loads((self.box.work / "run.json").read_text(encoding="utf-8"))
         self.assertEqual(written["project_root"], str(self.box.repo))
@@ -155,7 +155,7 @@ class Confirming(TrustTest):
         self.assertEqual((proc.returncode, proc.stdout.strip()), (0, "Trusted: local"), proc.stderr)
         proc, names = self.box.check(self.box.builders(LOCAL, out="later.json"))
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        self.assertEqual(proc.stdout.splitlines(), ["local: printf ran > RAN-local.txt; : (timeout 30 min) (trusted)"])
+        self.assertEqual(proc.stdout.splitlines(), ["local: touch RAN-local.txt (timeout 30 min) (trusted)"])
         self.assertEqual(names, ["local"])
 
     def test_adding_twice_keeps_one_entry(self):
@@ -163,7 +163,7 @@ class Confirming(TrustTest):
         self.box.add(builders, "local")
         self.assertEqual(self.box.add(builders, "local").returncode, 0)
         proc = self.box.trust("list", "--root", str(self.box.repo))
-        self.assertEqual(proc.stdout.splitlines(), ["local: printf ran > RAN-local.txt; : (timeout 30 min)"])
+        self.assertEqual(proc.stdout.splitlines(), ["local: touch RAN-local.txt (timeout 30 min)"])
 
     def test_a_name_not_in_the_checked_builders_is_refused_and_nothing_is_written(self):
         builders = self.box.builders(LOCAL)
@@ -181,7 +181,7 @@ class Unattended(TrustTest):
         proc, names = self.box.check(builders, unattended=True)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertEqual(proc.stdout.splitlines(),
-                         ["local: printf ran > RAN-local.txt; : (timeout 30 min) (trusted)", "Skipped: team (not confirmed)"])
+                         ["local: touch RAN-local.txt (timeout 30 min) (trusted)", "Skipped: team (not confirmed)"])
         self.assertEqual(names, ["local"])
         run = self.box.work / "run.json"
         brief, handback = self.box.work / "brief.md", self.box.work / "handback.md"
@@ -201,7 +201,7 @@ class ChangesAskAgain(TrustTest):
 
     def test_any_change_to_the_builder_asks_again(self):
         changes = {
-            "one character in the command": ({**LOCAL, "command": "printf ran > RAN-local.txT; :"}, "local"),
+            "one character in the command": ({**LOCAL, "command": "touch RAN-local.txT"}, "local"),
             "a trailing space in the command": ({**LOCAL, "command": LOCAL["command"] + " "}, "local"),
             "a changed timeout": ({**LOCAL, "timeout_minutes": 31}, "local"),
             "a renamed builder": ({**LOCAL, "name": "local2"}, "local2"),
@@ -333,7 +333,7 @@ class Revoking(TrustTest):
         self.assertEqual(names, ["team"])
         self.assertIn("Skipped: local (not confirmed)", proc.stdout.splitlines())
         listed = self.box.trust("list", "--root", str(self.box.repo))
-        self.assertEqual(listed.stdout.splitlines(), ["team: printf ran > RAN-team.txt; : (timeout 30 min)"])
+        self.assertEqual(listed.stdout.splitlines(), ["team: touch RAN-team.txt (timeout 30 min)"])
         _, names = self.box.check(other_builders)
         self.assertEqual(names, ["local"], "the other clone's entry was removed too")
 
