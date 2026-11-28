@@ -111,8 +111,9 @@ class GitFacts(unittest.TestCase):
             r.git("status", "--porcelain", "-uall", env=env)
             return index.read_bytes() != before
 
-        self.assertTrue(touch_and_status(ENV), "a plain git status refreshes (writes) the index")
-        self.assertFalse(touch_and_status({**ENV, "GIT_OPTIONAL_LOCKS": "0"}), "GIT_OPTIONAL_LOCKS=0 does not")
+        plain = {k: v for k, v in ENV.items() if k != "GIT_OPTIONAL_LOCKS"}  # an exported value must not leak in
+        self.assertTrue(touch_and_status(plain), "a plain git status refreshes (writes) the index")
+        self.assertFalse(touch_and_status({**plain, "GIT_OPTIONAL_LOCKS": "0"}), "GIT_OPTIONAL_LOCKS=0 does not")
 
     def test_a_stale_local_base_differs_from_the_fetched_remote_base(self):
         origin = Repo(self, "origin")
