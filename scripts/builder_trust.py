@@ -80,7 +80,7 @@ from builders_check import NAME, minutes_text, problem
 TRUST_ENV = "LARAVEL_CLAUDE_SKILLS_TRUST_FILE"
 TRUST_NAME = os.path.join("laravel-claude-skills", "trusted-builders.json")
 VERSION = 1
-INTERPRETERS = ("sh", "bash", "zsh", "dash", "python", "python3", "php", "node", "ruby", "perl")
+INTERPRETERS = ("sh", "bash", "zsh", "dash", "ksh", "python", "python3", "php", "node", "ruby", "perl")
 TASK_RUNNERS = ("make", "just", "composer", "npm", "npx", "pnpm", "yarn", "ddev")
 
 
@@ -170,28 +170,6 @@ def lookup(word: str, root: str):
     return os.path.normpath(found) if found else None
 
 
-def unwrap(parts: list) -> tuple:
-    """(the words after leading VAR=value words and the wrappers env, nice, timeout, nohup, exec and command
-    with their options and values, whether a wrapper was skipped)."""
-    wrapped = False
-    while parts and ASSIGNMENT.match(parts[0]):
-        parts = parts[1:]
-    while parts and name_of(parts[0]) in WRAPPERS:
-        wrapper, parts, wrapped = name_of(parts[0]), parts[1:], True
-        while parts and parts[0].startswith("-") and parts[0] != "-":
-            option, parts = parts[0], parts[1:]
-            if option == "--":
-                break
-            if option in WRAPPERS[wrapper] and parts:
-                parts = parts[1:]
-        if wrapper == "env":
-            while parts and ASSIGNMENT.match(parts[0]):
-                parts = parts[1:]
-        if wrapper == "timeout" and parts:
-            parts = parts[1:]  # the duration
-    return parts, wrapped
-
-
 def inside_top(path: str, top: str) -> bool:
     """Whether the path, as joined or resolved through symlinks, is inside the git top-level."""
     return any(os.path.commonpath([candidate, top]) == top for candidate in (path, os.path.realpath(path)))
@@ -206,51 +184,133 @@ def file_digest(path: str):
         return None
 
 
-def resolve(command: str, root: str, top: str) -> dict:
-    """What the command runs, resolved as the shell does (test_builder_trust_resolution):
+SHELL_SYNTAX = set(";&|<>()$`")
+SHELLS = ("sh", "bash", "zsh", "dash", "ksh")
 
-    kind `runner`        a task runner (make, composer, npm and the rest, `php artisan`, `python -m`): repo code
-                         no key covers, marked `(runs repo code)`;
-    kind `file`          a repository file, with its real path and sha256 (None when it cannot be read);
-    kind `unresolvable`  the command after a wrapper is not found: it cannot be trusted;
-    kind `plain`         anything else (a tool outside the repository, a shell builtin, inline code).
-    Interpreters and runners match on the case-folded word or on the resolved file name, since a PATH tool can
-    be a link to a versioned file (python3 -> python3.13, npm -> npm-cli.js)."""
-    parts, wrapped = unwrap(words(command))
+
+def inline_flag(interpreter: str, arg: str) -> bool:
+    """Whether the argument makes the interpreter run inline code: a single-dash flag group holding `c` after a
+    shell or python (`-c`, `-lc`, `-cx`), `-r` after php, `-e`, `-p`, `--eval` or `--print` after node, `-e` or
+    `-E` after ruby and perl."""
+    if interpreter in SHELLS or interpreter.startswith("python"):
+        return re.fullmatch(r"-[A-Za-z]*c[A-Za-z]*", arg) is not None
+    if interpreter == "php":
+        return arg == "-r" or arg.startswith("--run")
+    if interpreter == "node":
+        return arg in ("-e", "-p", "--eval", "--print") or arg.startswith(("--eval=", "--print="))
+    if interpreter in ("ruby", "perl"):
+        return arg in ("-e", "-E")
+    return False
+
+
+def interpreter_of(word: str, found) -> str | None:
+    """The interpreter a command word runs, by its case-folded name or by the name of the file PATH resolved it
+    to, a versioned name included (python3 -> python3.13)."""
+    names = [name_of(word)] + ([name_of(os.path.realpath(found))] if found else [])
+    for name in names:
+        if name in INTERPRETERS:
+            return name
+    for name in names:
+        hit = next((i for i in sorted(INTERPRETERS, key=len, reverse=True)
+                    if name.startswith(i) and name[len(i):].lstrip(".0123456789") == ""), None)
+        if hit:
+            return hit
+    return None
+
+
+def resolve(command: str, root: str, top: str) -> dict:
+    """What the command runs, resolved as `sh -c` would run it, failing closed (test_builder_trust_fail_closed,
+    test_builder_trust_resolution, test_builder_trust_repo_files). Returns:
+
+    refused  why it cannot be trusted, or None: shell syntax (`;`, `&`, `|`, `<`, `>`, `(`, `)`, `$`, a
+             backtick) or a command that does not split, inline code, `env -C`/`--chdir`/`-S`, a command after a
+             wrapper that PATH cannot find, or a repo file it names that does not exist;
+    runner   a task runner (make, composer, npm and the rest, `php artisan`, `python -m`): marked
+             `(runs repo code)`;
+    files    real path -> sha256 of every existing regular file inside the git top-level that a word names
+             (joined to the project root) and of every program PATH resolves inside it (the first word, a wrapper,
+             an interpreter, a runner). The entry keys on this whole map: any change to a file, a file that
+             appears or disappears, asks again. `artisan` after `php` is not keyed: the runner mark covers it."""
+    out = {"refused": None, "runner": False, "files": {}}
+    if any(ch in SHELL_SYNTAX for ch in command):
+        out["refused"] = "shell syntax"
+        return out
+    parts = words(command)
     if not parts:
-        return {"kind": "unresolvable" if wrapped else "plain"}
-    found = lookup(parts[0], root)
-    if found is None and wrapped:
-        return {"kind": "unresolvable"}
-    names = {name_of(parts[0])} | ({name_of(os.path.realpath(found))} if found else set())
-    if names & set(TASK_RUNNERS):
-        return {"kind": "runner"}
-    interpreter = next((n for n in names if n in INTERPRETERS), None)
-    if interpreter is None and found and os.path.exists(found):
-        base = name_of(os.path.realpath(found))
-        interpreter = next((i for i in INTERPRETERS if base.startswith(i) and base[len(i):].lstrip(".0123456789") == ""), None)
-    if interpreter is not None:
-        target = None
-        for arg in parts[1:]:
-            if arg == "-c":
-                return {"kind": "plain"}
-            if arg == "-m" and interpreter.startswith("python"):
-                return {"kind": "runner"}
-            if not arg.startswith("-"):
-                target = arg
+        out["refused"] = "does not split into words"
+        return out
+    real_root = os.path.realpath(root)
+    unkeyed = set()
+
+    def key_program(found) -> None:
+        if found and os.path.isfile(found) and inside_top(found, top):
+            out["files"][os.path.realpath(found)] = file_digest(found)
+
+    rest, wrapped = list(parts), False
+    while rest and ASSIGNMENT.match(rest[0]):
+        rest = rest[1:]
+    while rest and name_of(rest[0]) in WRAPPERS:
+        wrapper, wrapped = name_of(rest[0]), True
+        key_program(lookup(rest[0], root))
+        rest = rest[1:]
+        while rest and rest[0].startswith("-") and rest[0] != "-":
+            option, rest = rest[0], rest[1:]
+            if option == "--":
                 break
-        if target is None:
-            return {"kind": "plain"}
-        if interpreter == "php" and target == "artisan":
-            return {"kind": "runner"}
-        path = os.path.normpath(os.path.join(os.path.realpath(root), target))
-    elif found is not None:
-        path = found
-    else:
-        return {"kind": "plain"}
-    if not inside_top(path, top):
-        return {"kind": "plain"}
-    return {"kind": "file", "file": os.path.realpath(path), "sha256": file_digest(path)}
+            if wrapper == "env" and (option in ("-C", "--chdir", "-S", "--split-string")
+                                     or option.startswith(("--chdir=", "--split-string="))):
+                out["refused"] = "env changes the directory or splits a string"
+                return out
+            if option in WRAPPERS[wrapper] and rest:
+                rest = rest[1:]
+        if wrapper == "env":
+            while rest and ASSIGNMENT.match(rest[0]):
+                rest = rest[1:]
+        if wrapper == "timeout" and rest:
+            rest = rest[1:]  # the duration
+    if not rest:
+        out["refused"] = "nothing left after the wrappers" if wrapped else None
+        return out
+    found = lookup(rest[0], root)
+    if found is None and wrapped:
+        out["refused"] = "the command after a wrapper is not found"
+        return out
+    key_program(found)
+    if "/" in rest[0] and found and inside_top(found, top) and not os.path.isfile(found):
+        out["refused"] = "a repository file it names does not exist"
+        return out
+    names = {name_of(rest[0])} | ({name_of(os.path.realpath(found))} if found else set())
+    out["runner"] = bool(names & set(TASK_RUNNERS))
+    interpreter = None if out["runner"] else interpreter_of(rest[0], found)
+    if interpreter is not None:
+        for index, arg in enumerate(rest[1:], start=1):
+            if inline_flag(interpreter, arg):
+                out["refused"] = "inline code"
+                return out
+            if arg == "-m" and interpreter.startswith("python"):
+                out["runner"] = True
+                if index + 1 < len(rest):
+                    unkeyed.add(index + 1)
+                break
+            if arg.startswith("-"):
+                continue
+            if interpreter == "php" and arg == "artisan":
+                out["runner"] = True
+                unkeyed.add(index)
+                break
+            target = os.path.normpath(os.path.join(real_root, arg))
+            if inside_top(target, top) and not os.path.isfile(target):
+                out["refused"] = "a repository file it names does not exist"
+                return out
+            break
+    offset = len(parts) - len(rest)
+    for index, word in enumerate(parts):
+        if index - offset in unkeyed:
+            continue
+        path = os.path.normpath(os.path.join(real_root, word))
+        if os.path.isfile(path) and inside_top(path, top):
+            out["files"][os.path.realpath(path)] = file_digest(path)
+    return out
 
 
 def fingerprint(builder: dict, root: str, repo: tuple) -> dict:
@@ -295,6 +355,9 @@ def valid_entry(entry) -> bool:
         return False
     if any(key in entry and not isinstance(entry[key], str) for key in ("sha256", "file")):
         return False
+    files = entry.get("files", {})
+    if not isinstance(files, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in files.items()):
+        return False
     minutes = entry.get("timeout_minutes")
     return not isinstance(minutes, bool) and isinstance(minutes, (int, float))
 
@@ -320,7 +383,8 @@ def refusal(path: str, folders: tuple):
             return f"ignored {path}: a trust file inside the project is never read"
     tree = work_tree(path)
     if tree is not None:
-        return f"ignored {path}: a trust file inside a git work tree ({tree}) is never read"
+        return (f"ignored {path}: a trust file inside a git work tree ({tree}) is never read; set "
+                "LARAVEL_CLAUDE_SKILLS_TRUST_FILE to a file outside every git work tree")
     return None
 
 
@@ -403,13 +467,12 @@ def same_minutes(a, b) -> bool:
 
 
 def matches(entry: dict, repo: tuple, builder: dict, resolved: dict) -> bool:
-    """Whether the entry trusts this exact builder in this repository. An unresolvable command is never trusted;
-    one that runs a repo file also needs the entry's file and sha256 to equal the file's real path and bytes (an
-    entry without them, from before the key, never matches it)."""
-    if resolved["kind"] == "unresolvable":
+    """Whether the entry trusts this exact builder in this repository. A refused command is never trusted, and the
+    entry's `files` map (real path -> sha256) must equal the repo files the command names now (an entry from
+    before the map, or one whose files changed, appeared or disappeared, never matches)."""
+    if resolved["refused"] or None in resolved["files"].values():
         return False
-    if resolved["kind"] == "file" and (resolved["sha256"] is None or entry.get("sha256") != resolved["sha256"]
-                                       or entry.get("file") != resolved["file"]):
+    if entry.get("files", {}) != resolved["files"]:
         return False
     return ((entry["repository"], entry["origin"]) == repo and entry["name"] == builder["name"]
             and entry["command"] == builder["command"]
@@ -462,7 +525,7 @@ def check(args) -> int:
     trusted = []
     for builder in data["builders"]:
         resolved = fingerprint(builder, root, repo)
-        runner = resolved["kind"] == "runner"
+        runner = resolved["runner"]
         if any(matches(e, repo, builder, resolved) for e in entries):
             trusted.append(builder)
             print(f"{line(builder)} (trusted, runs repo code)" if runner else f"{line(builder)} (trusted)")
@@ -488,12 +551,12 @@ def add(args) -> int:
     root = data["project_root"]
     repo = identity(root)
     resolved = fingerprint(builder, root, repo)
-    if resolved["kind"] == "unresolvable":
-        print(f"{args.name}: the command after a wrapper cannot be found; nothing written", file=sys.stderr)
+    if resolved["refused"]:
+        print(f"{args.name} cannot be trusted ({resolved['refused']}): put the logic in a repository script and "
+              "trust a command that runs it; nothing written", file=sys.stderr)
         return 2
-    if resolved["kind"] == "file" and resolved["sha256"] is None:
-        print(f"{args.name} runs a repository file that does not exist or cannot be read; nothing written",
-              file=sys.stderr)
+    if None in resolved["files"].values():
+        print(f"{args.name} names a repository file that cannot be read; nothing written", file=sys.stderr)
         return 2
     path = trust_path()
     reason = refusal(path, folders(root, repo))
@@ -502,8 +565,8 @@ def add(args) -> int:
         return 2
     entry = {"repository": repo[0], "origin": repo[1], "name": builder["name"],
              "command": builder["command"], "timeout_minutes": builder["timeout_minutes"]}
-    if resolved["kind"] == "file":
-        entry["file"], entry["sha256"] = resolved["file"], resolved["sha256"]
+    if resolved["files"]:
+        entry["files"] = resolved["files"]
     try:
         with Locked(path):
             entries = load(path, folders(root, repo))
