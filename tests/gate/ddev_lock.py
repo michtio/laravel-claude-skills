@@ -6,17 +6,37 @@ class that touches the fixture app takes this lock in setUpClass and releases it
 cleanup, so a second run waits for the first instead of colliding with it. The lock is an
 flock on a file in the system temp directory, so it dies with its process: a run killed by a
 signal never leaves it held.
+
+The DDEV projects carry the same checkout digest as the lock (FIXTURE_PROJECT, project()), so two
+checkouts or worktrees never share a project, and start() fails loudly with the ddev output.
 """
 from __future__ import annotations
 
 import fcntl
 import hashlib
+import subprocess
 import tempfile
 import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
-LOCK = Path(tempfile.gettempdir()) / f"lcs-fixture-app-{hashlib.sha1(str(REPO).encode()).hexdigest()[:10]}.lock"
+DIGEST = hashlib.sha1(str(REPO).encode()).hexdigest()[:10]
+LOCK = Path(tempfile.gettempdir()) / f"lcs-fixture-app-{DIGEST}.lock"
+FIXTURE_PROJECT = f"lcs-fixture-app-{DIGEST}"
+
+
+def project(base: str) -> str:
+    """A DDEV project name for this checkout: `<base>-<digest>`."""
+    return f"{base}-{DIGEST}"
+
+
+def start(app: Path, name: str = FIXTURE_PROJECT) -> None:
+    """Register the app under this checkout's project name and start it; RuntimeError with the ddev output
+    when either command fails, so a DDEV failure is never reported later as an artisan failure."""
+    for args in (["config", f"--project-name={name}"], ["start"]):
+        r = subprocess.run(["ddev", *args], cwd=app, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError(f"ddev {' '.join(args)} failed in {app} (exit {r.returncode}):\n" + (r.stdout + r.stderr)[-3000:])
 
 
 def acquire(timeout: float = 1800.0, poll: float = 1.0):
