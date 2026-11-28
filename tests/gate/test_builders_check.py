@@ -3,7 +3,8 @@
 Requirements R18 (the outside builder named in the profile gets the brief) and R27 (an unusable builder is
 skipped and reported, never silently). Builder-added test (G3), beside the S10 gate: a profile is a file in the
 repository, so a builder name or timeout must never reach a shell line unchecked; names must match
-^[A-Za-z0-9._-]{1,64}$ in full (a trailing newline is refused, as the setup's ProfileValidator does), commands are one line with no control characters, and timeouts are numbers above 0.
+^[A-Za-z0-9._-]{1,64}$ in full (a trailing newline is refused, as the setup's ProfileValidator does), commands are one line with no control, format or line/paragraph separator characters (Unicode C*, Zl, Zp:
+no right-to-left override or zero-width character can disguise the printed consent line), and timeouts are numbers above 0.
 Standard library only.
 
     python3 -m unittest discover -s tests/gate -p 'test_builders_check.py'
@@ -70,6 +71,11 @@ class UnsafeBuilders(unittest.TestCase):
             "empty command": ({"name": "a", "command": ""}, "command"),
             "command with a newline": ({"name": "a", "command": "true\nrm -rf ~"}, "command"),
             "command with an escape": ({"name": "a", "command": "true\x1b[2K"}, "command"),
+            "command with U+202E": ({"name": "a", "command": "true \u202e x"}, "command"),
+            "command with U+200B": ({"name": "a", "command": "true \u200b x"}, "command"),
+            "command with U+2028": ({"name": "a", "command": "true \u2028 x"}, "command"),
+            "command with U+2029": ({"name": "a", "command": "true \u2029 x"}, "command"),
+            "command with U+FEFF": ({"name": "a", "command": "true \ufeff x"}, "command"),
             "timeout zero": ({"name": "a", "command": "true", "timeout_minutes": 0}, "timeout_minutes"),
             "timeout negative": ({"name": "a", "command": "true", "timeout_minutes": -1}, "timeout_minutes"),
             "timeout a string": ({"name": "a", "command": "true", "timeout_minutes": "5"}, "timeout_minutes"),

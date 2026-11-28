@@ -35,7 +35,7 @@ Then two more sections:
   - At most 3 rounds.
   - Commit your work before writing the hand-back.
 
-When the suite is not isolated (the tests can reach the dev database), `## Rules` adds a fifth rule: "The suite is not isolated: never run a test that uses `RefreshDatabase`, `DatabaseMigrations`, `DatabaseTruncation` or `LazilyRefreshDatabase`, and never run `migrate:fresh` or `db:wipe`." A builder never changes the files that decide isolation (`phpunit.xml`, `phpunit.xml.dist`, `tests/Pest.php`, `tests/TestCase.php`, `.env`, `.env.testing`); the caller compares them before every gate run, and a change disqualifies the builder.
+When the suite is not isolated (the tests can reach the dev database), `## Rules` adds a fifth rule: "The suite is not isolated: never run a test that uses `RefreshDatabase`, `DatabaseMigrations`, `DatabaseTruncation` or `LazilyRefreshDatabase`, and never run `migrate:fresh` or `db:wipe`." A builder never changes the files that decide isolation (`phpunit.xml`, `phpunit.xml.dist`, `tests/Pest.php`, `tests/TestCase.php`, `.env`, `.env.testing`, `testbench.yaml`, `config/database.php` and the phpunit bootstrap file (unless it is under `vendor/`)); the caller compares them before every gate run, and a change disqualifies the builder.
 
 A later round appends a `## Findings (round <n>)` section with what sent the slice back: uncommitted files, the hand-back checker's messages, the red gate output or review findings.
 

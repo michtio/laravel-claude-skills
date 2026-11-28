@@ -28,7 +28,9 @@ class Project:
     def __init__(self, root: Path):
         self.root = root
         (root / "tests").mkdir(parents=True)
-        (root / "phpunit.xml.dist").write_text('<env name="DB_DATABASE" value="app_test" force="true"/>\n')
+        (root / "phpunit.xml.dist").write_text(
+            '<phpunit bootstrap="tests/bootstrap.php"><env name="DB_DATABASE" value="app_test" force="true"/></phpunit>\n')
+        (root / "tests/bootstrap.php").write_text("<?php\n")
         (root / "tests/Pest.php").write_text("<?php\n")
         (root / "tests/TestCase.php").write_text("<?php\n")
         (root / ".env").write_text("DB_DATABASE=app\n")
@@ -59,6 +61,9 @@ class Guard(unittest.TestCase):
             "tests/TestCase.php": lambda r: (r / "tests/TestCase.php").unlink(),
             ".env": lambda r: (r / ".env").write_text("DB_DATABASE=app_test\n"),
             ".env.testing": lambda r: (r / ".env.testing").write_text("DB_DATABASE=app\n"),
+            "testbench.yaml": lambda r: (r / "testbench.yaml").write_text("env:\n  DB_DATABASE: app\n"),
+            "config/database.php": lambda r: (r / "config").mkdir() or (r / "config/database.php").write_text("<?php return ['default' => 'mysql'];\n"),
+            "tests/bootstrap.php": lambda r: (r / "tests/bootstrap.php").write_text("<?php putenv('DB_DATABASE=app');\n"),
         }
         for path, change in changes.items():
             with self.subTest(path=path), tempfile.TemporaryDirectory() as raw:
@@ -69,6 +74,27 @@ class Guard(unittest.TestCase):
                 self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
                 self.assertEqual(proc.stdout.strip(), f"changed: {path}")
 
+    def test_the_bootstrap_comes_from_phpunit_xml_before_the_dist_file(self):
+        with tempfile.TemporaryDirectory() as raw:
+            project = Project(Path(raw) / "app")
+            (project.root / "phpunit.xml").write_text('<phpunit bootstrap="tests/local.php"></phpunit>\n')
+            (project.root / "tests/local.php").write_text("<?php\n")
+            project.take()
+            (project.root / "tests/local.php").write_text("<?php putenv('DB_DATABASE=app');\n")
+            proc = project.verify()
+            self.assertEqual((proc.returncode, proc.stdout.strip()), (1, "changed: tests/local.php"))
+
+    def test_a_composer_bootstrap_under_vendor_is_not_watched(self):
+        """Any composer install rewrites vendor/autoload.php, so watching it would disqualify every builder that adds a package."""
+        with tempfile.TemporaryDirectory() as raw:
+            project = Project(Path(raw) / "app")
+            (project.root / "phpunit.xml.dist").write_text('<phpunit bootstrap="vendor/autoload.php"></phpunit>\n')
+            (project.root / "vendor").mkdir()
+            (project.root / "vendor/autoload.php").write_text("<?php // a\n")
+            project.take()
+            (project.root / "vendor/autoload.php").write_text("<?php // b\n")
+            self.assertEqual(project.verify().returncode, 0)
+
     def test_bad_calls_exit_2(self):
         with tempfile.TemporaryDirectory() as raw:
             tmp = Path(raw)
@@ -77,6 +103,29 @@ class Guard(unittest.TestCase):
                                 "missing root": ("snapshot", "--root", str(tmp / "nope"), "--out", str(tmp / "s.json"))}.items():
                 with self.subTest(case=label):
                     self.assertEqual(guard(*args).returncode, 2)
+
+
+class Wipers(unittest.TestCase):
+    """R18: on a suite that is not isolated, a database-wiping trait anywhere under tests/ is found, a builder's new
+    test file included, so the gate is never run against the configured database."""
+
+    def test_each_wiping_trait_under_tests_is_named(self):
+        for trait in ("RefreshDatabase", "DatabaseMigrations", "DatabaseTruncation", "LazilyRefreshDatabase"):
+            with self.subTest(trait=trait), tempfile.TemporaryDirectory() as raw:
+                project = Project(Path(raw) / "app")
+                (project.root / "tests/Feature").mkdir()
+                (project.root / "tests/Feature/NewTest.php").write_text(f"<?php\nuses({trait}::class);\n")
+                proc = guard("wipers", "--root", str(project.root))
+                self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+                self.assertEqual(proc.stdout.strip(), f"tests/Feature/NewTest.php: {trait}")
+
+    def test_a_suite_without_wiping_traits_passes(self):
+        with tempfile.TemporaryDirectory() as raw:
+            project = Project(Path(raw) / "app")
+            (project.root / "tests/Unit").mkdir()
+            (project.root / "tests/Unit/MathTest.php").write_text("<?php\nit('adds', fn () => expect(1 + 1)->toBe(2));\n")
+            proc = guard("wipers", "--root", str(project.root))
+            self.assertEqual((proc.returncode, proc.stdout), (0, ""))
 
 
 class GatedBuildUsesTheGuard(unittest.TestCase):
@@ -98,6 +147,22 @@ class GatedBuildUsesTheGuard(unittest.TestCase):
         self.assertTrue(self.has(skill, r"suite_guard\.py verify", r"before (each|every) gate rerun", r"disqualif"))
         self.assertTrue(self.has(skill, r"RefreshDatabase", r"DatabaseMigrations", r"DatabaseTruncation",
                                  r"LazilyRefreshDatabase", r"(run nothing|never run)"))
+
+    def test_the_snapshot_is_taken_after_the_gate_commit_and_before_the_first_builder(self):
+        text = (REPO / "resources/boost/skills/laravel-gated-build/SKILL.md").read_text(encoding="utf-8")
+        snapshot = text.find("suite_guard.py snapshot")
+        self.assertGreater(snapshot, text.find("## 2. Gate tests first"), "the snapshot is taken before the gate writer runs")
+        self.assertLess(snapshot, text.find("**Run it:**"), "the snapshot is taken after the first builder runs")
+        self.assertTrue(self.has("docs/outside-builders.md", r"snapshot", r"after the gate commit", r"before the first builder"))
+
+    def test_wiping_traits_are_searched_again_before_every_gate_rerun(self):
+        skill = "resources/boost/skills/laravel-gated-build/SKILL.md"
+        self.assertTrue(self.has(skill, r"suite_guard\.py wipers", r"before (each|every) gate rerun",
+                                 r"wiping trait on a not-isolated suite"))
+
+    def test_the_report_names_a_change_that_survives_the_reset(self):
+        self.assertTrue(self.has("resources/boost/skills/laravel-gated-build/references/report.md",
+                                 r"Stopped: <path> changed by <name> survives the reset"))
 
     def test_the_brief_format_has_the_not_isolated_rule(self):
         self.assertTrue(self.has("docs/brief-format.md", r"not isolated", r"RefreshDatabase", r"never run"))

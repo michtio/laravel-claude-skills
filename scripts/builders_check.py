@@ -7,7 +7,10 @@ The profile is a file in the repository, so nothing in it reaches a shell line
 unchecked. A builder is usable when:
 
     name             matches ^[A-Za-z0-9._-]{1,64}$ and no earlier builder has it
-    command          a non-empty string with no control characters (one printable line)
+    command          a non-empty string with no Unicode control, format, surrogate,
+                     private-use or unassigned character (category C*) and no line or
+                     paragraph separator (Zl, Zp): one printable line that shows what
+                     it runs, with no right-to-left override or zero-width character
     timeout_minutes  absent (30) or a JSON number above 0 (a boolean or string is refused)
 
 Prints one line per builder, in profile order: `<name>: <command> (timeout <n> min)`
@@ -30,9 +33,9 @@ import json
 import os
 import re
 import sys
+import unicodedata
 
 NAME = re.compile(r"[A-Za-z0-9._-]{1,64}")
-CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 DEFAULT_TIMEOUT = 30
 
 
@@ -45,6 +48,13 @@ class Usage(argparse.ArgumentParser):
         sys.exit(2)
 
 
+def hidden(text: str) -> bool:
+    """Whether the text holds a character that can hide or reorder what the consent line shows: any Unicode
+    control, format, surrogate, private-use or unassigned character (category C*), such as U+202E or U+200B,
+    or a line or paragraph separator (Zl, Zp). Proved by test_builders_check: UnsafeBuilders."""
+    return any(unicodedata.category(ch)[0] == "C" or unicodedata.category(ch) in ("Zl", "Zp") for ch in text)
+
+
 def problem(builder) -> str | None:
     """Why a builder is unusable, as `invalid <field>: <reason>`, or None when it is usable."""
     if not isinstance(builder, dict):
@@ -53,8 +63,8 @@ def problem(builder) -> str | None:
     if not isinstance(name, str) or not NAME.fullmatch(name):
         return "invalid name: must match ^[A-Za-z0-9._-]{1,64}$"
     command = builder.get("command")
-    if not isinstance(command, str) or not command.strip() or CONTROL.search(command):
-        return "invalid command: must be a non-empty string with no control characters"
+    if not isinstance(command, str) or not command.strip() or hidden(command):
+        return "invalid command: must be a non-empty string with no control, format or separator characters"
     if "timeout_minutes" in builder:
         minutes = builder["timeout_minutes"]
         if isinstance(minutes, bool) or not isinstance(minutes, (int, float)) or not minutes > 0:

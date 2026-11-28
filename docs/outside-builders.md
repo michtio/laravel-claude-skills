@@ -18,7 +18,7 @@ Outside builders are listed in the project profile, `.ai/skills-profile.json`, u
 
 Each builder has a `name`, a `command` and an optional `timeout_minutes` (a number above 0; 30 when it is left out). Builders run in the order the profile lists them.
 
-Because the profile is a file in the repository, nothing in it reaches a shell unchecked. `python3 scripts/builders_check.py --profile .ai/skills-profile.json --root <project root> --out <file>` skips, by position, any builder whose `name` does not match `^[A-Za-z0-9._-]{1,64}$`, whose `command` is empty or holds a control character (a newline, an escape sequence), whose `timeout_minutes` is not a number above 0, or whose name an earlier builder already has. It prints the usable ones as `<name>: <command> (timeout <n> min)` and writes them to `<file>`.
+Because the profile is a file in the repository, nothing in it reaches a shell unchecked. `python3 scripts/builders_check.py --profile .ai/skills-profile.json --root <project root> --out <file>` skips, by position, any builder whose `name` does not match `^[A-Za-z0-9._-]{1,64}$`, whose `command` is empty or holds a character that can hide what it runs (any Unicode control, format, surrogate, private-use or unassigned character, such as a newline, an escape sequence, a right-to-left override or a zero-width space, and any line or paragraph separator), whose `timeout_minutes` is not a number above 0, or whose name an earlier builder already has. It prints the usable ones as `<name>: <command> (timeout <n> min)` and writes them to `<file>`.
 
 ## Call form
 
@@ -50,7 +50,7 @@ A team tool that already holds the values can pass `--cwd <project root> --timeo
 
 ## Before each builder
 
-Each builder starts from a clean slice, so a failed builder leaves nothing behind for the next one. A suite that is not isolated and uses a database-wiping trait (`RefreshDatabase`, `DatabaseMigrations`, `DatabaseTruncation`, `LazilyRefreshDatabase`) runs no builder at all: the caller asks for a forced test database first.
+Each builder starts from a clean slice, so a failed builder leaves nothing behind for the next one. The snapshot of the files that decide isolation is taken once, after the gate commit and before the first builder, so the gate writer's own changes to `tests/Pest.php` or `tests/TestCase.php` belong to the base. A git-ignored one of those files that a builder changed survives the reset: the build stops there and says which file to restore. A suite that is not isolated and uses a database-wiping trait (`RefreshDatabase`, `DatabaseMigrations`, `DatabaseTruncation`, `LazilyRefreshDatabase`) runs no builder at all: the caller asks for a forced test database first.
 
 1. The base is the gate commit, or, when the slice has none, the commit the slice started from.
 2. Clear any skip-worktree or assume-unchanged flag (`git reset --hard` keeps them), then reset the tree to the base: `git reset --hard <base>` removes the failed builder's commits and edits, and `git clean -fd` removes its untracked files.
@@ -65,7 +65,7 @@ After every exit 0, in every round, the caller checks in this order:
 1. Both lock checks, from the repository root, each gate file as `:(literal)<path>`: `git diff --quiet <gate commit> HEAD -- <gate files>` and `git diff --quiet <gate commit> -- <gate files>`, and `git ls-files -v -- <gate files>` lists no line starting with a lowercase letter or `S` (a skip-worktree or assume-unchanged flag hides an edit from both). A nonzero code or a flag disqualifies the builder: reset, next builder.
 2. A clean tree: `git status --porcelain --untracked-files=all` prints nothing. Uncommitted work sends the slice back to the same builder.
 3. The hand-back checker: `python3 scripts/handback_check.py --brief <brief-file> <handback-file>`. A hand-back with a missing or bad line is not a pass, whatever else it says.
-4. The test configuration: `python3 scripts/suite_guard.py verify --root <project root> --snapshot <file>`, against the snapshot taken before the first builder. A created, changed or deleted `phpunit.xml`, `phpunit.xml.dist`, `tests/Pest.php`, `tests/TestCase.php`, `.env` or `.env.testing` disqualifies the builder, and the gate is not run on its code.
+4. The test configuration: `python3 scripts/suite_guard.py verify --root <project root> --snapshot <file>`, against the snapshot taken after the gate commit and before the first builder. A created, changed or deleted `phpunit.xml`, `phpunit.xml.dist`, `tests/Pest.php`, `tests/TestCase.php`, `.env`, `.env.testing`, `testbench.yaml`, `config/database.php` and the phpunit bootstrap file (unless it is under `vendor/`) disqualifies the builder, and the gate is not run on its code. On a suite that is not isolated, `python3 scripts/suite_guard.py wipers --root <project root>` runs too: a test under `tests/` that names a database-wiping trait, a builder's new test included, disqualifies the builder, and the gate is not run.
 5. The gate, rerun by the caller with the brief's Pest command. The hand-back is a claim, not evidence.
 6. A review of the builder's commits, as for the package's own builder.
 
