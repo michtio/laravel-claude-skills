@@ -32,7 +32,14 @@ def project(base: str) -> str:
 
 def start(app: Path, name: str = FIXTURE_PROJECT) -> None:
     """Register the app under this checkout's project name and start it; RuntimeError with the ddev output
-    when either command fails, so a DDEV failure is never reported later as an artisan failure."""
+    when either command fails, so a DDEV failure is never reported later as an artisan failure. An app still
+    registered under another name (the old machine-wide `lcs-fixture-app`) is unlisted first: DDEV refuses a
+    second name for one project root."""
+    config = Path(app) / ".ddev/config.yaml"
+    old = next((l.split(":", 1)[1].strip() for l in config.read_text(encoding="utf-8").splitlines()
+                if l.startswith("name:")), "") if config.is_file() else ""
+    if old and old != name:
+        subprocess.run(["ddev", "stop", "--unlist", old], cwd=app, capture_output=True, text=True)
     for args in (["config", f"--project-name={name}"], ["start"]):
         r = subprocess.run(["ddev", *args], cwd=app, capture_output=True, text=True)
         if r.returncode != 0:
