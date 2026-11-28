@@ -56,7 +56,7 @@ final class SetupState
     /**
      * Load the state of a project; a missing or unreadable file is an empty state.
      *
-     * @throws SetupException When a recorded step holds control characters (a tampered file).
+     * @throws SetupException When a recorded step holds control, format or separator characters (a tampered file).
      * @author michtio
      */
     public static function load(string $root): self

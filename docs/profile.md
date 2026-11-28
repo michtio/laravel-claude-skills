@@ -94,7 +94,8 @@ An invalid profile is refused before anything is planned: the setup exits 1 with
 
 - `command` is called as `<command> <brief-file> <handback-file>`: the two paths are appended to the command, so the command holds no placeholder. It runs from the project root.
 - Exit 0 means done, exit 3 unavailable, any other exit failed; no exit within `timeout_minutes` counts as failed.
-- Before running any of them, the gated build prints each builder as `<name>: <command> (timeout <n> min)` and waits for your yes to that list. A request counts as the yes only when it names every command exactly as the profile has it. Without a yes, with a partial yes, or in an unattended run, no outside builder runs and `laravel-builder` builds the slice; the report says `Skipped: <name> (not confirmed)` for each.
+- Before running any of them, the gated build prints each builder as `<name>: <command> (timeout <n> min)` and waits for your yes to that list. A request counts as the yes only when it names every command exactly as the profile has it. Without a yes, with a partial yes, or in an unattended run, no builder that is not trusted runs, and when none is trusted `laravel-builder` builds the slice; the report says `Skipped: <name> (not confirmed)` for each.
+- Your yes is kept once per machine in a trust list outside the repository (`~/.config/laravel-claude-skills/trusted-builders.json`), keyed on the repository and the exact name, command and timeout: a trusted builder is marked `(trusted)` and runs without asking, unattended runs included, and any change to it asks again. Revoke an entry with `python3 vendor/michtio/laravel-claude-skills/scripts/builder_trust.py remove --root <project root> --name <name>`.
 
 The full protocol (exit codes, the reset before each builder, the checks on the result) is in [outside-builders.md](outside-builders.md); the brief and hand-back formats are in [brief-format.md](brief-format.md). The setup itself never runs a builder.
 
@@ -188,7 +189,7 @@ The setup forces the test environment in the PHPUnit file so the suite never rea
 - A step that fails (non-zero exit) stops the run with exit code 1: later steps do not run, files already written stay written.
 - A step that ran is recorded by exact name and command in `.ai/claude-skills-setup.json`. A rerun plans only steps that are not recorded: a new step, or one whose name or command changed in any way, even by a space. A failed step is not recorded, so the rerun plans it again. Removing a step plans nothing.
 - So a team tool that updates other options must not rewrite the text of existing steps (reformat, re-quote, rename): any change to a step's name or command runs that step again.
-- A name is one line of plain text and a command plain text: control characters (a carriage return, an escape sequence, NUL and the like) are refused, so a step cannot hide what it runs. A command may hold tabs and newlines; a multi-line command is shown as one block under `Run:`. Steps recorded in `.ai/claude-skills-setup.json` are checked the same way, and a state file with such a step is refused.
+- A name is one line of plain text and a command plain text: control characters (a carriage return, an escape sequence, NUL and the like), right-to-left overrides, zero-width characters and other Unicode format characters, and line or paragraph separators are refused, so a step cannot hide or reorder what it runs. A command may hold tabs and newlines; a multi-line command is shown as one block under `Run:`. Steps recorded in `.ai/claude-skills-setup.json` are checked the same way, and a state file with such a step is refused.
 
 ## Package verdicts
 

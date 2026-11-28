@@ -1,0 +1,93 @@
+[
+ {
+  "id": "gated-build-trusted",
+  "acs": [
+   "AC28"
+  ],
+  "note": "Owner ruling 2026-11-28 (R18, R27): outside-builder consent is given once per machine, so an unattended run uses the builders this machine trusts. Same fixture as gated-build-outside; the prompt gives no yes and forbids questions, and first records only ./bin/stub-ok in a throwaway trust file (LARAVEL_CLAUDE_SKILLS_TRUST_FILE, never the home folder's file). Expected: laravel-gate-writer commits test(gate): S1 first; builder_trust.py check --unattended prints stub-ok marked (trusted) and Skipped: <name> (not confirmed) for stub-unavailable and stub-fail, which never run (no stub-fail commit, no STUB-FAIL-PARTIAL.txt, no exit line for either); stub-ok runs from the check's --out file without a question, both lock checks, the hand-back check and laravel-review-checker cover its result, and the report names stub-ok as the builder. agents: the gate writer, the checker and up to two re-checks = 4; laravel-builder must not start. Runs once.",
+  "cwd": "evals/fixtures/gated-build",
+  "copy_cwd": true,
+  "tools": "Agent,Skill,Read,Grep,Glob,Edit,Write,Bash",
+  "max_turns": 40,
+  "timeout": 1800,
+  "runs": 1,
+  "expect_agents": [
+   "laravel-gate-writer",
+   "laravel-review-checker"
+  ],
+  "forbid_agents": [
+   "laravel-builder"
+  ],
+  "max_agents": 4,
+  "prompt": "Use the laravel-gated-build skill to build slice S1 of specs/2026-11-27-greeting/plan.md (R1, AC1 and AC2; both documents approved). The project's .ai/skills-profile.json names outside builders. There is no DDEV project and no Laravel install here: the Pest command in every brief is `vendor/bin/pest`, run from the project root (a small stand-in runner), so skip every ddev, Pint and Larastan gate and say so. git works. This is a non-interactive run: nobody answers, so never ask a question. This machine already trusts `./bin/stub-ok` for this project and nothing else. Set that up first, outside the project and never in your home folder: make a folder with `mktemp -d` (`<trust>`), run `builders_check.py` on the profile with `--out <trust>/builders.json`, then `builder_trust.py add --builders <trust>/builders.json --name stub-ok`, and put `LARAVEL_CLAUDE_SKILLS_TRUST_FILE=<trust>/trusted-builders.json` in front of every `builder_trust.py` call of the run, that one included. When the run ends, run `git log --reverse --format='LOG|%s'` and `git status --short | sed 's/^/STATUS|/'` and paste both outputs, unprefixed lines included, in a code block after the final report. Reply with the report verbatim, never a summary of it.",
+  "must_match": [
+   [
+    "LOG\\|test\\(gate\\): S1[^\\n]*\\n(?:LOG\\|[^\\n]*\\n)*?LOG\\|feat\\(S1\\)[^\\n]*stub-ok"
+   ],
+   [
+    "Gate flow:?\\**:?\\s*locked"
+   ],
+   [
+    "stub-ok:[^\\n]{0,80}\\(trusted\\)"
+   ],
+   [
+    "stub-unavailable[^\\n]{0,40}\\(?not confirmed"
+   ],
+   [
+    "stub-fail[^\\n]{0,40}\\(?not confirmed"
+   ],
+   [
+    "Builder:?\\**:?\\s*stub-ok"
+   ],
+   [
+    "Lock check[^\\n]{0,160}exit\\s*0"
+   ],
+   [
+    "(handback_check|hand-?back check)[^\\n]{0,200}(pass|exit\\s*0|exit code 0|\\bok\\b|accepted)"
+   ],
+   [
+    "Checker:?\\**:?\\s*\\S"
+   ]
+  ],
+  "must_not_match": [
+   "Builder:?\\**:?\\s*laravel-builder",
+   "stub-ok[^\\n]{0,40}\\(?not confirmed",
+   "LOG\\|[^\\n]*\\(stub-fail\\)",
+   "STATUS\\|\\s*\\?\\?\\s+STUB-FAIL-PARTIAL",
+   "stub-(unavailable|fail)\\b[^\\n]{0,120}\\bexit(?:ed)?\\s*[13]\\b",
+   "\\b(shall|should) I\\b|\\bdo you (want|approve)",
+   "\\.config/laravel-claude-skills",
+   "Checker:?\\**:?\\s*(skipped|not run)"
+  ],
+  "facts": [
+   {
+    "file": "resources/boost/skills/laravel-gated-build/SKILL.md",
+    "contains": [
+     "builder_trust\\.py check[^\\n]*--out <work>/run\\.json",
+     "\\(trusted\\)",
+     "Trusted builders skip the prompt, in a non-interactive run too",
+     "builder_trust\\.py add",
+     "run_builder\\.py --builders <work>/run\\.json",
+     "Skipped: <name> \\(not confirmed\\)"
+    ]
+   },
+   {
+    "file": "scripts/builder_trust.py",
+    "contains": [
+     "--unattended",
+     "Skipped: \\{builder\\['name'\\]\\} \\(not confirmed\\)",
+     "\\(trusted\\)",
+     "LARAVEL_CLAUDE_SKILLS_TRUST_FILE"
+    ]
+   },
+   {
+    "file": "docs/outside-builders.md",
+    "contains": [
+     "trusted-builders\\.json",
+     "LARAVEL_CLAUDE_SKILLS_TRUST_FILE",
+     "builder_trust\\.py remove --root <project root> --name <name>"
+    ]
+   }
+  ]
+ }
+]

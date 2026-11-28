@@ -11,7 +11,8 @@ unchecked. A builder is usable when:
                      private-use or unassigned character (category C*) and no line or
                      paragraph separator (Zl, Zp): one printable line that shows what
                      it runs, with no right-to-left override or zero-width character
-    timeout_minutes  absent (30) or a JSON number above 0 (a boolean or string is refused)
+    timeout_minutes  absent (30) or a finite JSON number above 0 (a boolean, a string,
+                     Infinity or an integer too large for a float is refused)
 
 Prints one line per builder, in profile order: `<name>: <command> (timeout <n> min)`
 for a usable one (the list the user says yes to), `Skipped: builders.<i> (invalid
@@ -30,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -55,6 +57,15 @@ def hidden(text: str) -> bool:
     return any(unicodedata.category(ch)[0] == "C" or unicodedata.category(ch) in ("Zl", "Zp") for ch in text)
 
 
+def finite(value) -> bool:
+    """Whether the number is finite as a float: a huge integer or Infinity is refused, not a traceback
+    (test_builder_trust_rules: Timeouts)."""
+    try:
+        return math.isfinite(float(value))
+    except OverflowError:
+        return False
+
+
 def problem(builder) -> str | None:
     """Why a builder is unusable, as `invalid <field>: <reason>`, or None when it is usable."""
     if not isinstance(builder, dict):
@@ -67,7 +78,7 @@ def problem(builder) -> str | None:
         return "invalid command: must be a non-empty string with no control, format or separator characters"
     if "timeout_minutes" in builder:
         minutes = builder["timeout_minutes"]
-        if isinstance(minutes, bool) or not isinstance(minutes, (int, float)) or not minutes > 0:
+        if isinstance(minutes, bool) or not isinstance(minutes, (int, float)) or not finite(minutes) or not minutes > 0:
             return "invalid timeout_minutes: must be a number above 0"
     return None
 
