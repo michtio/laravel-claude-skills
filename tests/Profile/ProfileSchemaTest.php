@@ -11,16 +11,17 @@ declare(strict_types=1);
  *   repo   michtio/craftcms-claude-skills (git@github.com:michtio/craftcms-claude-skills.git)
  *   ref    main at 48f0c241db45bacb0e9d6668afaeafb6473a7143 (merge of PR #32; the file is not in
  *          the v1.31.0 tag, it arrived after it)
- *   path   schema/skills-profile.schema.json
- *   blob   c199e01ba7112a4b0f1ae2d9dec47ebb9d6227e9 (git hash-object)
- *   sha256 69cae85225237022d729e4020c3c1b74d7e2d9decb74cbf0e702d48114d05036
+ *   path   schema/skills-profile.schema.json, with "pattern": "^[A-Za-z0-9._-]{1,64}$" added to
+ *          builders.items.properties.name (ruled 2026-11-28, both packs)
+ *   blob   4cbce501a9aad3f83f02f4435c9b0d6b9948ca0e (git hash-object)
+ *   sha256 39b36ee7899fcae616cfd0c050e31325e3a6d88cc391abbdb32ccdbef8102023
  * When the Craft pack changes the schema, the builder copies the new file, and this pin
  * changes with the gate writer, in both packs' gates.
  */
 
 const SCHEMA = __DIR__.'/../../schema/skills-profile.schema.json';
-const CRAFT_SCHEMA_BLOB = 'c199e01ba7112a4b0f1ae2d9dec47ebb9d6227e9';
-const CRAFT_SCHEMA_SHA256 = '69cae85225237022d729e4020c3c1b74d7e2d9decb74cbf0e702d48114d05036';
+const CRAFT_SCHEMA_BLOB = '4cbce501a9aad3f83f02f4435c9b0d6b9948ca0e';
+const CRAFT_SCHEMA_SHA256 = '39b36ee7899fcae616cfd0c050e31325e3a6d88cc391abbdb32ccdbef8102023';
 
 it('ships the schema file, byte for byte the Craft pack\'s pinned file', function () {
     expect(is_file(SCHEMA))->toBeTrue();
