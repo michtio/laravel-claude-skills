@@ -6,8 +6,10 @@ library only. Run: python3 -m unittest discover -s tests/gate
 
 Contract: tests/Profile/CONTRACT.md. In short:
   - schema/skills-profile.schema.json is byte-identical to the Craft pack's file at
-    michtio/craftcms-claude-skills main 48f0c241db45bacb0e9d6668afaeafb6473a7143
-    (git blob c199e01ba7112a4b0f1ae2d9dec47ebb9d6227e9, sha256 below);
+    michtio/craftcms-claude-skills main 48f0c241db45bacb0e9d6668afaeafb6473a7143 with
+    the builder name pattern added (ruled 2026-11-28: builders[].name gets
+    "pattern": "^[A-Za-z0-9._-]{1,64}$" in both packs; git blob
+    4cbce501a9aad3f83f02f4435c9b0d6b9948ca0e, sha256 below);
   - docs/profile.md names the profile path and every key of the schema, the six laravel
     keys with their defaults, and the rules (unknown keys, verdict precedence, rerun).
 """
@@ -22,8 +24,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent.parent
 SCHEMA = REPO / "schema/skills-profile.schema.json"
 DOCS = REPO / "docs/profile.md"
-CRAFT_BLOB = "c199e01ba7112a4b0f1ae2d9dec47ebb9d6227e9"
-CRAFT_SHA256 = "69cae85225237022d729e4020c3c1b74d7e2d9decb74cbf0e702d48114d05036"
+CRAFT_BLOB = "4cbce501a9aad3f83f02f4435c9b0d6b9948ca0e"
+CRAFT_SHA256 = "39b36ee7899fcae616cfd0c050e31325e3a6d88cc391abbdb32ccdbef8102023"
 
 LARAVEL_KEYS = {
     "runner": "auto",
