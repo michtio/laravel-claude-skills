@@ -46,7 +46,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from outside_builder_support import BUILDERS_DOC, REPO, assert_line, git, read_new  # noqa: E402
 from test_builder_trust import TRUST, Sandbox, TrustTest  # noqa: E402
 
-PRE_KEY_COMMIT = "b5010572db91c7e59ea069dc20ed416df87cd9ed"  # the S10b build (b501057): its entries carry no file key
+PRE_KEY_COMMIT = "b5010572db91c7e59ea069dc20ed416df87cd9ed"  # gitleaks:allow (a commit sha: the S10b build b501057, whose entries carry no file key)
 SCRIPTS = {
     "bin/build": "#!/bin/sh\necho build\n",
     "scripts/x.sh": "#!/bin/sh\necho x\n",
