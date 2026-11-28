@@ -11,7 +11,13 @@ Builder-added tests (G3) for `scripts/builder_trust.py`, beside tests/gate/test_
 - a project that is not a git repository is keyed on its real path;
 - the identity ignores GIT_* variables (GIT_CONFIG_COUNT and GIT_CONFIG_KEY_<n> cannot change the origin);
 - a trust file spelled with other letter case inside the project, on a case-insensitive volume, is ignored;
-- builders_check.py skips an Infinity or an integer timeout too large for a float instead of crashing.
+- builders_check.py skips an Infinity or an integer timeout too large for a float instead of crashing;
+- an untrusted task-runner command shows `(runs repo code)` at the prompt (owner ruling, S10b round 2);
+- a path outside the git top-level (absolute or `../`) names no repo file, so a missing one does not block add;
+- `sh -c '<code>'` names no repo file (the code is the command text, already keyed);
+- credentials are stripped from scheme URLs with a port, and an scp-like `git@host:path` stays as it is;
+- the trust file is read through one descriptor (open, then fstat), never stat-then-open;
+- add holds an exclusive lock from the read to the write, so a second writer waits.
 
 Standard library only.
 
@@ -22,8 +28,10 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import fcntl
 import subprocess
 import sys
+import time
 import tempfile
 import unittest
 from pathlib import Path
@@ -155,6 +163,85 @@ class Timeouts(TrustTest):
                                        "--out", str(self.box.work / "b.json")], capture_output=True, text=True, timeout=30)
                 self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
                 self.assertIn("Skipped: builders.0 (invalid timeout_minutes", proc.stdout)
+
+
+class RepoCodeAtThePrompt(TrustTest):
+    def test_an_untrusted_task_runner_is_marked_before_the_yes(self):
+        runner = {"name": "local", "command": "make build"}
+        builders = self.box.builders(runner)
+        proc, names = self.box.check(builders)
+        self.assertEqual((proc.stdout.splitlines(), names), (["local: make build (timeout 30 min) (runs repo code)"], []))
+        proc, _ = self.box.check(builders, unattended=True)
+        self.assertEqual(proc.stdout.splitlines(), ["Skipped: local (not confirmed)"])
+
+    def test_a_path_outside_the_repository_names_no_repo_file(self):
+        for command in ("/nonexistent-tool-dir/builder --fast", "../nonexistent-sibling/builder", "sh ../nonexistent-sibling/x.sh"):
+            with self.subTest(command=command):
+                builders = self.box.builders({"name": "local", "command": command}, out="outside.json")
+                proc = self.box.add(builders, "local")
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                _, names = self.box.check(builders)
+                self.assertEqual(names, ["local"])
+
+    def test_inline_shell_code_names_no_repo_file(self):
+        command = {"name": "local", "command": "bash -c 'printf ran > RAN.txt'"}
+        builders = self.box.builders(command)
+        self.assertEqual(self.box.add(builders, "local").returncode, 0)
+        proc, names = self.box.check(builders)
+        self.assertEqual((proc.stdout.splitlines(), names),
+                         (["local: bash -c 'printf ran > RAN.txt' (timeout 30 min) (trusted)"], ["local"]))
+
+
+class Credentials(unittest.TestCase):
+    def test_scheme_urls_lose_their_credentials_and_scp_urls_stay(self):
+        module = trust_module()
+        cases = {
+            "https://u:p@example.com:8443/acme/app.git": "https://example.com:8443/acme/app.git",
+            "ssh://git@example.com/acme/app.git": "ssh://example.com/acme/app.git",
+            "git@example.com:acme/app.git": "git@example.com:acme/app.git",
+            "https://example.com/a@b/app.git": "https://example.com/a@b/app.git",
+            "": "",
+        }
+        for url, expected in cases.items():
+            with self.subTest(url=url):
+                self.assertEqual(module.without_credentials(url), expected)
+
+
+class OneDescriptor(TrustTest):
+    def test_the_trust_file_is_never_stat_then_opened(self):
+        self.box.add(self.box.builders(LOCAL), "local")
+        module = trust_module()
+        target = str(self.box.trust_file)
+        real_stat = os.stat
+
+        def guarded(path, *args, **kwargs):
+            if str(path) == target:
+                raise AssertionError("os.stat on the trust file path: stat-then-open")
+            return real_stat(path, *args, **kwargs)
+
+        with mock.patch.object(module.os, "stat", side_effect=guarded):
+            entries = module.load(target, (str(self.box.tmp / "unrelated"),))
+        self.assertEqual(len(entries), 1)
+
+
+class Locking(TrustTest):
+    def test_add_waits_for_the_lock_and_then_writes(self):
+        builders = self.box.builders(LOCAL)
+        self.box.trust_file.parent.mkdir(parents=True)
+        lock = os.open(str(self.box.trust_file) + ".lock", os.O_RDWR | os.O_CREAT, 0o600)
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            proc = subprocess.Popen([sys.executable, str(TRUST), "add", "--builders", str(builders), "--name", "local"],
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.box.env())
+            time.sleep(1.5)
+            self.assertIsNone(proc.poll(), "add did not wait for the lock")
+            self.assertFalse(self.box.trust_file.exists())
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+            os.close(lock)
+        out, err = proc.communicate(timeout=30)
+        self.assertEqual((proc.returncode, out.strip()), (0, "Trusted: local"), err)
+        self.assertTrue(self.box.trust_file.is_file())
 
 
 if __name__ == "__main__":

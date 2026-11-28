@@ -10,7 +10,20 @@
 the repository (the real path of the git top-level of the project root plus its
 remote.origin.url, empty when there is none) and the builder's exact name, command
 and timeout_minutes: another clone, a changed origin, or a builder changed by one
-character asks again.
+character asks again. The user and password of an origin URL with a scheme
+(`https://user:password@host/...`, `https://token@host/...`) are stripped first, so no
+output or trust file byte holds them and a rotated password keeps the trust.
+
+A command that runs a file of the repository is also keyed on the sha256 of that
+file's bytes (read through any symlink), so a commit or edit to it, or a retargeted
+symlink, asks again. The repo file of a command, split as a POSIX shell splits words:
+its first word when that word holds a `/`; else, when the first word is an
+interpreter (sh, bash, zsh, dash, python, python3, php, node, ruby, perl), its first
+argument that does not start with `-` (none after `-c`, whose code is the command
+text itself). It counts when that path, joined to the project root without resolving
+symlinks, is inside the git top-level. A missing repo file cannot be trusted. A
+command whose first word is a task runner (make, just, composer, npm, npx, pnpm,
+yarn, ddev) runs repository files no key covers: `check` marks it `(runs repo code)`.
 
 The trust file lives outside every repository:
     $LARAVEL_CLAUDE_SKILLS_TRUST_FILE when set, else
@@ -22,29 +35,39 @@ write bit is set, when another user owns it, or when it is not valid; the reason
 the path go to stderr, and a corrupt file is never overwritten.
 
 check   prints one line per builder of --builders, in order:
-        `<name>: <command> (timeout <n> min) (trusted)` for a trusted one, and for
-        the rest `<name>: <command> (timeout <n> min)`, or with --unattended
-        `Skipped: <name> (not confirmed)`. Writes --out in the --builders format with
+        `<name>: <command> (timeout <n> min) (trusted)` for a trusted one
+        (`(trusted, runs repo code)` for a task runner), and for the rest
+        `<name>: <command> (timeout <n> min)` (plus ` (runs repo code)` for a task
+        runner), or with --unattended `Skipped: <name> (not confirmed)`. Writes --out in the --builders format with
         the trusted builders only, so scripts/run_builder.py --builders can run
         nothing else from it. Exit 0; 2 for a usage error, an unreadable --builders
         file or an unwritable --out.
 add     records the builder of --builders with that name (never a command from the
         arguments) and prints `Trusted: <name>`; adding it again keeps one entry, and
         an older entry of the same repository and name is replaced. Exit 0; 2, trust
-        file untouched, for a name not in --builders or a trust file that is ignored.
+        file untouched, for a name not in --builders, a repo file that does not exist,
+        or a trust file that is ignored.
 list    prints `<name>: <command> (timeout <n> min)` per entry of this repository.
 remove  deletes this repository's entries with that name and prints `Removed: <name>`;
         exit 1 when there is none, 2 when the trust file is ignored. Entries of other
         repositories stay.
 
+The trust file is read through one file descriptor (open, then fstat for its mode and
+owner), and add and remove hold an exclusive lock on `<trust file>.lock` from the
+read to the write, so concurrent calls never lose an entry.
+
 git runs with argument lists, never through a shell. Proved by
-tests/gate/test_builder_trust.py. Python 3.9+, standard library only.
+tests/gate/test_builder_trust.py, test_builder_trust_repo_files.py and
+test_builder_trust_rules.py. Python 3.9+, standard library only.
 """
 from __future__ import annotations
 
 import argparse
+import fcntl
+import hashlib
 import json
 import os
+import shlex
 import stat
 import subprocess
 import sys
@@ -55,6 +78,8 @@ from builders_check import NAME, minutes_text, problem
 TRUST_ENV = "LARAVEL_CLAUDE_SKILLS_TRUST_FILE"
 TRUST_NAME = os.path.join("laravel-claude-skills", "trusted-builders.json")
 VERSION = 1
+INTERPRETERS = ("sh", "bash", "zsh", "dash", "python", "python3", "php", "node", "ruby", "perl")
+TASK_RUNNERS = ("make", "just", "composer", "npm", "npx", "pnpm", "yarn", "ddev")
 
 
 class Usage(argparse.ArgumentParser):
@@ -83,12 +108,78 @@ def git(root: str, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["git", "-C", root, *args], capture_output=True, text=True, env=env)
 
 
+def without_credentials(url: str) -> str:
+    """The URL with the user and password of a scheme URL removed (`https://user:pass@host/x` and
+    `https://token@host/x` become `https://host/x`); an scp-like `git@host:x` has no scheme and stays."""
+    scheme, sep, rest = url.partition("://")
+    if not sep:
+        return url
+    authority, slash, tail = rest.partition("/")
+    return f"{scheme}://{authority.rpartition('@')[2]}{slash}{tail}"
+
+
 def identity(root: str) -> tuple:
-    """(real path of the git top-level, origin URL); the root's real path when it is not in a git repository."""
+    """(real path of the git top-level, origin URL without credentials); the root's real path when it is not in
+    a git repository."""
     top = git(root, "rev-parse", "--show-toplevel")
     path = top.stdout.strip() if top.returncode == 0 and top.stdout.strip() else root
     origin = git(root, "config", "--get", "remote.origin.url")
-    return os.path.realpath(path), origin.stdout.strip() if origin.returncode == 0 else ""
+    return os.path.realpath(path), without_credentials(origin.stdout.strip()) if origin.returncode == 0 else ""
+
+
+# Repo code
+# =========================================================================
+
+
+def words(command: str) -> list:
+    """The command split as a POSIX shell splits words; [] when it does not split (an open quote)."""
+    try:
+        return shlex.split(command, posix=True)
+    except ValueError:
+        return []
+
+
+def repo_file(command: str, root: str, top: str):
+    """The path of the repository file the command runs, joined to the project root without resolving
+    symlinks, or None when it runs none (test_builder_trust_repo_files: RepoFileKey)."""
+    parts = words(command)
+    if not parts:
+        return None
+    target = None
+    if "/" in parts[0]:
+        target = parts[0]
+    elif parts[0] in INTERPRETERS:
+        for arg in parts[1:]:
+            if arg == "-c":
+                return None
+            if not arg.startswith("-"):
+                target = arg
+                break
+    if target is None:
+        return None
+    joined = os.path.normpath(os.path.join(os.path.realpath(root), target))
+    return joined if os.path.commonpath([joined, top]) == top else None
+
+
+def file_digest(path: str):
+    """sha256 of the file's bytes, read through any symlink; None when it cannot be read."""
+    try:
+        with open(path, "rb") as fh:
+            return hashlib.sha256(fh.read()).hexdigest()
+    except OSError:
+        return None
+
+
+def runs_repo_code(command: str) -> bool:
+    """Whether the command's first word is a task runner, which runs repository files no key covers."""
+    parts = words(command)
+    return bool(parts) and os.path.basename(parts[0]) in TASK_RUNNERS
+
+
+def fingerprint(builder: dict, root: str, repo: tuple):
+    """(has a repo file, its sha256 or None when missing) for this builder."""
+    path = repo_file(builder["command"], root, repo[0])
+    return (False, None) if path is None else (True, file_digest(path))
 
 
 def inside(path: str, folder: str) -> bool:
@@ -97,7 +188,7 @@ def inside(path: str, folder: str) -> bool:
     real, base = os.path.realpath(path), os.path.realpath(folder)
     if os.path.commonpath([real, base]) == base:
         return True
-    current = real
+    current = os.path.dirname(real)
     while True:
         if os.path.exists(current) and os.path.exists(base) and os.path.samefile(current, base):
             return True
@@ -126,6 +217,8 @@ def valid_entry(entry) -> bool:
         return False
     if not all(isinstance(entry.get(key), str) for key in ("repository", "origin", "name", "command")):
         return False
+    if "sha256" in entry and not isinstance(entry["sha256"], str):
+        return False
     minutes = entry.get("timeout_minutes")
     return not isinstance(minutes, bool) and isinstance(minutes, (int, float))
 
@@ -137,24 +230,44 @@ def load(path: str, folders: tuple) -> list:
         if inside(path, folder):
             raise Refused(f"ignored {path}: a trust file inside the project is never read")
     try:
-        info = os.stat(path)
+        fd = os.open(path, os.O_RDONLY)
     except FileNotFoundError:
         return []
     except OSError as err:
         raise Refused(f"ignored {path}: {err}")
-    if info.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
-        raise Refused(f"ignored {path}: group or other can write it (chmod 600 it)")
-    if hasattr(os, "getuid") and info.st_uid != os.getuid():
-        raise Refused(f"ignored {path}: another user owns it")
-    try:
-        with open(path, encoding="utf-8") as fh:
-            data = json.load(fh)
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as err:
-        raise Refused(f"ignored {path}: not a valid trust file ({err}); fix or delete it")
+    with os.fdopen(fd, "rb") as fh:
+        info = os.fstat(fh.fileno())
+        if info.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+            raise Refused(f"ignored {path}: group or other can write it (chmod 600 it)")
+        if hasattr(os, "getuid") and info.st_uid != os.getuid():
+            raise Refused(f"ignored {path}: another user owns it")
+        try:
+            data = json.loads(fh.read().decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as err:
+            raise Refused(f"ignored {path}: not a valid trust file ({err}); fix or delete it")
     entries = data.get("entries") if isinstance(data, dict) and data.get("version") == VERSION else None
     if not isinstance(entries, list) or not all(valid_entry(e) for e in entries):
         raise Refused(f"ignored {path}: not a valid trust file; fix or delete it")
     return entries
+
+
+class Locked:
+    """An exclusive flock on `<real trust file>.lock` (mode 0600), held from the read to the write of add and
+    remove, so two concurrent calls never lose an entry (test_builder_trust_rules: Locking)."""
+
+    def __init__(self, path: str):
+        real = os.path.realpath(path)
+        os.makedirs(os.path.dirname(real), mode=0o700, exist_ok=True)
+        self.lock = real + ".lock"
+
+    def __enter__(self) -> "Locked":
+        self.fd = os.open(self.lock, os.O_RDWR | os.O_CREAT, 0o600)
+        fcntl.flock(self.fd, fcntl.LOCK_EX)
+        return self
+
+    def __exit__(self, *exc) -> None:
+        fcntl.flock(self.fd, fcntl.LOCK_UN)
+        os.close(self.fd)
 
 
 def save(path: str, entries: list) -> None:
@@ -179,8 +292,12 @@ def same_minutes(a, b) -> bool:
     return float(a) == float(b)
 
 
-def matches(entry: dict, repo: tuple, builder: dict) -> bool:
-    """Whether the entry trusts this exact builder in this repository."""
+def matches(entry: dict, repo: tuple, builder: dict, print_: tuple) -> bool:
+    """Whether the entry trusts this exact builder in this repository; a builder that runs a repo file also needs
+    the entry's sha256 to equal the file's (an entry without one, from before the key, never matches it)."""
+    has_file, digest = print_
+    if has_file and (digest is None or entry.get("sha256") != digest):
+        return False
     return ((entry["repository"], entry["origin"]) == repo and entry["name"] == builder["name"]
             and entry["command"] == builder["command"]
             and same_minutes(entry["timeout_minutes"], builder["timeout_minutes"]))
@@ -231,13 +348,15 @@ def check(args) -> int:
         entries = []
     trusted = []
     for builder in data["builders"]:
-        if any(matches(e, repo, builder) for e in entries):
+        print_ = fingerprint(builder, root, repo)
+        runner = runs_repo_code(builder["command"])
+        if any(matches(e, repo, builder, print_) for e in entries):
             trusted.append(builder)
-            print(f"{line(builder)} (trusted)")
+            print(f"{line(builder)} (trusted, runs repo code)" if runner else f"{line(builder)} (trusted)")
         elif args.unattended:
             print(f"Skipped: {builder['name']} (not confirmed)")
         else:
-            print(line(builder))
+            print(f"{line(builder)} (runs repo code)" if runner else line(builder))
     try:
         with open(args.out, "w", encoding="utf-8") as fh:
             json.dump({"project_root": root, "builders": trusted}, fh, indent=2)
@@ -255,17 +374,28 @@ def add(args) -> int:
         return 2
     root = data["project_root"]
     repo = identity(root)
+    has_file, digest = fingerprint(builder, root, repo)
+    if has_file and digest is None:
+        print(f"{args.name} runs a repository file that does not exist or cannot be read; nothing written",
+              file=sys.stderr)
+        return 2
     path = trust_path()
+    for folder in folders(root, repo):
+        if inside(path, folder):
+            print(f"ignored {path}: a trust file inside the project is never read; nothing written", file=sys.stderr)
+            return 2
+    entry = {"repository": repo[0], "origin": repo[1], "name": builder["name"],
+             "command": builder["command"], "timeout_minutes": builder["timeout_minutes"]}
+    if has_file:
+        entry["sha256"] = digest
     try:
-        entries = load(path, folders(root, repo))
+        with Locked(path):
+            entries = load(path, folders(root, repo))
+            kept = [e for e in entries if not ((e["repository"], e["origin"]) == repo and e["name"] == builder["name"])]
+            save(path, kept + [entry])
     except Refused as err:
         print(f"{err}; nothing written", file=sys.stderr)
         return 2
-    kept = [e for e in entries if not ((e["repository"], e["origin"]) == repo and e["name"] == builder["name"])]
-    kept.append({"repository": repo[0], "origin": repo[1], "name": builder["name"],
-                 "command": builder["command"], "timeout_minutes": builder["timeout_minutes"]})
-    try:
-        save(path, kept)
     except OSError as err:
         print(f"cannot write {path}: {err}", file=sys.stderr)
         return 2
@@ -289,17 +419,24 @@ def listing(args) -> int:
 def remove(args) -> int:
     repo = identity(args.root)
     path = trust_path()
-    try:
-        entries = load(path, folders(args.root, repo))
-    except Refused as err:
-        print(f"{err}; nothing removed", file=sys.stderr)
-        return 2
-    kept = [e for e in entries if not ((e["repository"], e["origin"]) == repo and e["name"] == args.name)]
-    if len(kept) == len(entries):
+    for folder in folders(args.root, repo):
+        if inside(path, folder):
+            print(f"ignored {path}: a trust file inside the project is never read; nothing removed", file=sys.stderr)
+            return 2
+    if not os.path.exists(path):
         print(f"no trusted builder {args.name} for {repo[0]}", file=sys.stderr)
         return 1
     try:
-        save(path, kept)
+        with Locked(path):
+            entries = load(path, folders(args.root, repo))
+            kept = [e for e in entries if not ((e["repository"], e["origin"]) == repo and e["name"] == args.name)]
+            if len(kept) == len(entries):
+                print(f"no trusted builder {args.name} for {repo[0]}", file=sys.stderr)
+                return 1
+            save(path, kept)
+    except Refused as err:
+        print(f"{err}; nothing removed", file=sys.stderr)
+        return 2
     except OSError as err:
         print(f"cannot write {path}: {err}", file=sys.stderr)
         return 2
