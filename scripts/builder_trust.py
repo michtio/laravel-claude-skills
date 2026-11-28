@@ -67,7 +67,9 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import shlex
+import shutil
 import stat
 import subprocess
 import sys
@@ -109,11 +111,13 @@ def git(root: str, *args: str) -> subprocess.CompletedProcess:
 
 
 def without_credentials(url: str) -> str:
-    """The URL with the user and password of a scheme URL removed (`https://user:pass@host/x` and
-    `https://token@host/x` become `https://host/x`); an scp-like `git@host:x` has no scheme and stays."""
+    """The URL with the user and password, the query and the fragment of a scheme URL removed
+    (`https://user:pass@host/x?private_token=t#f` and `https://token@host/x` become `https://host/x`); an
+    scp-like `git@host:x` has no scheme and stays."""
     scheme, sep, rest = url.partition("://")
     if not sep:
         return url
+    rest = re.split(r"[?#]", rest, maxsplit=1)[0]
     authority, slash, tail = rest.partition("/")
     return f"{scheme}://{authority.rpartition('@')[2]}{slash}{tail}"
 
@@ -139,26 +143,58 @@ def words(command: str) -> list:
         return []
 
 
-def repo_file(command: str, root: str, top: str):
-    """The path of the repository file the command runs, joined to the project root without resolving
-    symlinks, or None when it runs none (test_builder_trust_repo_files: RepoFileKey)."""
-    parts = words(command)
-    if not parts:
-        return None
-    target = None
-    if "/" in parts[0]:
-        target = parts[0]
-    elif parts[0] in INTERPRETERS:
-        for arg in parts[1:]:
-            if arg == "-c":
-                return None
-            if not arg.startswith("-"):
-                target = arg
+ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+# Wrapper -> its options that take a value (as a separate word); every other `-` word is a flag.
+WRAPPERS = {
+    "env": ("-u", "--unset", "-C", "--chdir", "-S", "--split-string"),
+    "nice": ("-n", "--adjustment"),
+    "timeout": ("-s", "--signal", "-k", "--kill-after"),
+    "nohup": (),
+    "exec": ("-a",),
+    "command": (),
+}
+
+
+def name_of(word: str) -> str:
+    """The case-folded basename of a command word or path, for matching interpreters, wrappers and runners."""
+    return os.path.basename(word).casefold()
+
+
+def lookup(word: str, root: str):
+    """Where the shell finds the word: a word with a `/` joined to the project root (not resolved), a bare word
+    through PATH, relative PATH entries taken from the project root; None when PATH has no such executable."""
+    if "/" in word:
+        return os.path.normpath(os.path.join(os.path.realpath(root), word))
+    dirs = [os.path.join(os.path.realpath(root), d) for d in os.environ.get("PATH", "").split(os.pathsep) if d]
+    found = shutil.which(word, path=os.pathsep.join(dirs))
+    return os.path.normpath(found) if found else None
+
+
+def unwrap(parts: list) -> tuple:
+    """(the words after leading VAR=value words and the wrappers env, nice, timeout, nohup, exec and command
+    with their options and values, whether a wrapper was skipped)."""
+    wrapped = False
+    while parts and ASSIGNMENT.match(parts[0]):
+        parts = parts[1:]
+    while parts and name_of(parts[0]) in WRAPPERS:
+        wrapper, parts, wrapped = name_of(parts[0]), parts[1:], True
+        while parts and parts[0].startswith("-") and parts[0] != "-":
+            option, parts = parts[0], parts[1:]
+            if option == "--":
                 break
-    if target is None:
-        return None
-    joined = os.path.normpath(os.path.join(os.path.realpath(root), target))
-    return joined if os.path.commonpath([joined, top]) == top else None
+            if option in WRAPPERS[wrapper] and parts:
+                parts = parts[1:]
+        if wrapper == "env":
+            while parts and ASSIGNMENT.match(parts[0]):
+                parts = parts[1:]
+        if wrapper == "timeout" and parts:
+            parts = parts[1:]  # the duration
+    return parts, wrapped
+
+
+def inside_top(path: str, top: str) -> bool:
+    """Whether the path, as joined or resolved through symlinks, is inside the git top-level."""
+    return any(os.path.commonpath([candidate, top]) == top for candidate in (path, os.path.realpath(path)))
 
 
 def file_digest(path: str):
@@ -170,16 +206,56 @@ def file_digest(path: str):
         return None
 
 
-def runs_repo_code(command: str) -> bool:
-    """Whether the command's first word is a task runner, which runs repository files no key covers."""
-    parts = words(command)
-    return bool(parts) and os.path.basename(parts[0]) in TASK_RUNNERS
+def resolve(command: str, root: str, top: str) -> dict:
+    """What the command runs, resolved as the shell does (test_builder_trust_resolution):
+
+    kind `runner`        a task runner (make, composer, npm and the rest, `php artisan`, `python -m`): repo code
+                         no key covers, marked `(runs repo code)`;
+    kind `file`          a repository file, with its real path and sha256 (None when it cannot be read);
+    kind `unresolvable`  the command after a wrapper is not found: it cannot be trusted;
+    kind `plain`         anything else (a tool outside the repository, a shell builtin, inline code).
+    Interpreters and runners match on the case-folded word or on the resolved file name, since a PATH tool can
+    be a link to a versioned file (python3 -> python3.13, npm -> npm-cli.js)."""
+    parts, wrapped = unwrap(words(command))
+    if not parts:
+        return {"kind": "unresolvable" if wrapped else "plain"}
+    found = lookup(parts[0], root)
+    if found is None and wrapped:
+        return {"kind": "unresolvable"}
+    names = {name_of(parts[0])} | ({name_of(os.path.realpath(found))} if found else set())
+    if names & set(TASK_RUNNERS):
+        return {"kind": "runner"}
+    interpreter = next((n for n in names if n in INTERPRETERS), None)
+    if interpreter is None and found and os.path.exists(found):
+        base = name_of(os.path.realpath(found))
+        interpreter = next((i for i in INTERPRETERS if base.startswith(i) and base[len(i):].lstrip(".0123456789") == ""), None)
+    if interpreter is not None:
+        target = None
+        for arg in parts[1:]:
+            if arg == "-c":
+                return {"kind": "plain"}
+            if arg == "-m" and interpreter.startswith("python"):
+                return {"kind": "runner"}
+            if not arg.startswith("-"):
+                target = arg
+                break
+        if target is None:
+            return {"kind": "plain"}
+        if interpreter == "php" and target == "artisan":
+            return {"kind": "runner"}
+        path = os.path.normpath(os.path.join(os.path.realpath(root), target))
+    elif found is not None:
+        path = found
+    else:
+        return {"kind": "plain"}
+    if not inside_top(path, top):
+        return {"kind": "plain"}
+    return {"kind": "file", "file": os.path.realpath(path), "sha256": file_digest(path)}
 
 
-def fingerprint(builder: dict, root: str, repo: tuple):
-    """(has a repo file, its sha256 or None when missing) for this builder."""
-    path = repo_file(builder["command"], root, repo[0])
-    return (False, None) if path is None else (True, file_digest(path))
+def fingerprint(builder: dict, root: str, repo: tuple) -> dict:
+    """The resolution of this builder's command in this repository."""
+    return resolve(builder["command"], root, repo[0])
 
 
 def inside(path: str, folder: str) -> bool:
@@ -217,26 +293,53 @@ def valid_entry(entry) -> bool:
         return False
     if not all(isinstance(entry.get(key), str) for key in ("repository", "origin", "name", "command")):
         return False
-    if "sha256" in entry and not isinstance(entry["sha256"], str):
+    if any(key in entry and not isinstance(entry[key], str) for key in ("sha256", "file")):
         return False
     minutes = entry.get("timeout_minutes")
     return not isinstance(minutes, bool) and isinstance(minutes, (int, float))
 
 
+def work_tree(path: str):
+    """The git work tree that holds the trust file's folder (its nearest existing folder), or None. A trust file
+    in any work tree (a dotfiles repository, another project), tracked, untracked or ignored, could be committed
+    or changed by a pull, so it is refused (test_builder_trust_resolution: TrustFileInAGitTree)."""
+    folder = os.path.dirname(os.path.realpath(path))
+    while not os.path.isdir(folder):
+        parent = os.path.dirname(folder)
+        if parent == folder:
+            return None
+        folder = parent
+    top = git(folder, "rev-parse", "--show-toplevel")
+    return top.stdout.strip() or folder if top.returncode == 0 else None
+
+
+def refusal(path: str, folders: tuple):
+    """Why the trust file location is refused before anything is read or written, or None."""
+    for folder in folders:
+        if inside(path, folder):
+            return f"ignored {path}: a trust file inside the project is never read"
+    tree = work_tree(path)
+    if tree is not None:
+        return f"ignored {path}: a trust file inside a git work tree ({tree}) is never read"
+    return None
+
+
 def load(path: str, folders: tuple) -> list:
     """The entries of the trust file; [] when it does not exist. Raises Refused for a file inside one of the
     project folders, one others can write or another user owns, or a corrupt one."""
-    for folder in folders:
-        if inside(path, folder):
-            raise Refused(f"ignored {path}: a trust file inside the project is never read")
+    reason = refusal(path, folders)
+    if reason:
+        raise Refused(reason)
     try:
-        fd = os.open(path, os.O_RDONLY)
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
     except FileNotFoundError:
         return []
     except OSError as err:
         raise Refused(f"ignored {path}: {err}")
     with os.fdopen(fd, "rb") as fh:
         info = os.fstat(fh.fileno())
+        if not stat.S_ISREG(info.st_mode):
+            raise Refused(f"ignored {path}: not a regular file")
         if info.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
             raise Refused(f"ignored {path}: group or other can write it (chmod 600 it)")
         if hasattr(os, "getuid") and info.st_uid != os.getuid():
@@ -281,7 +384,14 @@ def save(path: str, entries: list) -> None:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump({"version": VERSION, "entries": entries}, fh, indent=2)
             fh.write("\n")
+            fh.flush()
+            os.fsync(fh.fileno())
         os.replace(tmp, real)
+        folder_fd = os.open(folder, os.O_RDONLY)
+        try:
+            os.fsync(folder_fd)
+        finally:
+            os.close(folder_fd)
     except BaseException:
         if os.path.exists(tmp):
             os.unlink(tmp)
@@ -292,11 +402,14 @@ def same_minutes(a, b) -> bool:
     return float(a) == float(b)
 
 
-def matches(entry: dict, repo: tuple, builder: dict, print_: tuple) -> bool:
-    """Whether the entry trusts this exact builder in this repository; a builder that runs a repo file also needs
-    the entry's sha256 to equal the file's (an entry without one, from before the key, never matches it)."""
-    has_file, digest = print_
-    if has_file and (digest is None or entry.get("sha256") != digest):
+def matches(entry: dict, repo: tuple, builder: dict, resolved: dict) -> bool:
+    """Whether the entry trusts this exact builder in this repository. An unresolvable command is never trusted;
+    one that runs a repo file also needs the entry's file and sha256 to equal the file's real path and bytes (an
+    entry without them, from before the key, never matches it)."""
+    if resolved["kind"] == "unresolvable":
+        return False
+    if resolved["kind"] == "file" and (resolved["sha256"] is None or entry.get("sha256") != resolved["sha256"]
+                                       or entry.get("file") != resolved["file"]):
         return False
     return ((entry["repository"], entry["origin"]) == repo and entry["name"] == builder["name"]
             and entry["command"] == builder["command"]
@@ -348,9 +461,9 @@ def check(args) -> int:
         entries = []
     trusted = []
     for builder in data["builders"]:
-        print_ = fingerprint(builder, root, repo)
-        runner = runs_repo_code(builder["command"])
-        if any(matches(e, repo, builder, print_) for e in entries):
+        resolved = fingerprint(builder, root, repo)
+        runner = resolved["kind"] == "runner"
+        if any(matches(e, repo, builder, resolved) for e in entries):
             trusted.append(builder)
             print(f"{line(builder)} (trusted, runs repo code)" if runner else f"{line(builder)} (trusted)")
         elif args.unattended:
@@ -374,20 +487,23 @@ def add(args) -> int:
         return 2
     root = data["project_root"]
     repo = identity(root)
-    has_file, digest = fingerprint(builder, root, repo)
-    if has_file and digest is None:
+    resolved = fingerprint(builder, root, repo)
+    if resolved["kind"] == "unresolvable":
+        print(f"{args.name}: the command after a wrapper cannot be found; nothing written", file=sys.stderr)
+        return 2
+    if resolved["kind"] == "file" and resolved["sha256"] is None:
         print(f"{args.name} runs a repository file that does not exist or cannot be read; nothing written",
               file=sys.stderr)
         return 2
     path = trust_path()
-    for folder in folders(root, repo):
-        if inside(path, folder):
-            print(f"ignored {path}: a trust file inside the project is never read; nothing written", file=sys.stderr)
-            return 2
+    reason = refusal(path, folders(root, repo))
+    if reason:
+        print(f"{reason}; nothing written", file=sys.stderr)
+        return 2
     entry = {"repository": repo[0], "origin": repo[1], "name": builder["name"],
              "command": builder["command"], "timeout_minutes": builder["timeout_minutes"]}
-    if has_file:
-        entry["sha256"] = digest
+    if resolved["kind"] == "file":
+        entry["file"], entry["sha256"] = resolved["file"], resolved["sha256"]
     try:
         with Locked(path):
             entries = load(path, folders(root, repo))
@@ -419,10 +535,10 @@ def listing(args) -> int:
 def remove(args) -> int:
     repo = identity(args.root)
     path = trust_path()
-    for folder in folders(args.root, repo):
-        if inside(path, folder):
-            print(f"ignored {path}: a trust file inside the project is never read; nothing removed", file=sys.stderr)
-            return 2
+    reason = refusal(path, folders(args.root, repo))
+    if reason:
+        print(f"{reason}; nothing removed", file=sys.stderr)
+        return 2
     if not os.path.exists(path):
         print(f"no trusted builder {args.name} for {repo[0]}", file=sys.stderr)
         return 1

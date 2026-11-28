@@ -91,4 +91,12 @@ cat > boost.json <<JSON
 JSON
 
 ddev exec php artisan boost:install --guidelines --skills --mcp --no-interaction
+
+# The app is its own git repository, as a consumer project is, so its
+# `composer test` secret scan (gitleaks detect --source .) covers the app's
+# history only, never this package's history one directory up.
+git init -q
+git add -A
+git -c user.name=fixture -c user.email=fixture@example.com -c commit.gpgsign=false \
+    commit -q -m "chore: fixture app"
 echo "fixtures/app ready ($project)"

@@ -17,7 +17,12 @@ Builder-added tests (G3) for `scripts/builder_trust.py`, beside tests/gate/test_
 - `sh -c '<code>'` names no repo file (the code is the command text, already keyed);
 - credentials are stripped from scheme URLs with a port, and an scp-like `git@host:path` stays as it is;
 - the trust file is read through one descriptor (open, then fstat), never stat-then-open;
-- add holds an exclusive lock from the read to the write, so a second writer waits.
+- add holds an exclusive lock from the read to the write, so a second writer waits;
+- save fsyncs the folder after the replace;
+- a trust file that fstat reports as not regular is refused even when its bytes are a valid trust file;
+- a repo-file entry also keys on the file's real path: a symlink retargeted to an identical copy asks again;
+- an interpreter or task runner is recognised by its resolved file name too (python3.13, a link to npm), and
+  more wrapper option forms resolve (`env -u NAME`, `timeout --kill-after 5 60`, `nice -5`).
 
 Standard library only.
 
@@ -242,6 +247,107 @@ class Locking(TrustTest):
         out, err = proc.communicate(timeout=30)
         self.assertEqual((proc.returncode, out.strip()), (0, "Trusted: local"), err)
         self.assertTrue(self.box.trust_file.is_file())
+
+
+class FolderSync(TrustTest):
+    def test_save_fsyncs_after_the_replace_too(self):
+        module = trust_module()
+        order = []
+        real_fsync, real_replace = os.fsync, os.replace
+        with mock.patch.object(module.os, "fsync", side_effect=lambda fd: (order.append("fsync"), real_fsync(fd))[1]), \
+                mock.patch.object(module.os, "replace", side_effect=lambda a, b: (order.append("replace"), real_replace(a, b))[1]):
+            module.save(str(self.box.trust_file), [])
+        self.assertIn("fsync", order[order.index("replace") + 1:], f"calls: {order}")
+
+
+class ResolvedNames(TrustTest):
+    SCRIPT = "scripts/x.py"
+
+    def setUp(self):
+        super().setUp()
+        (self.box.repo / "scripts").mkdir()
+        (self.box.repo / self.SCRIPT).write_text("print('x')\n", encoding="utf-8")
+        (self.box.repo / "bin").mkdir()
+        (self.box.repo / "bin/build").write_text("#!/bin/sh\n", encoding="utf-8")
+        os.chmod(self.box.repo / "bin/build", 0o755)
+        self.tools = self.box.tmp / "tools"
+        self.tools.mkdir()
+        for name in ("python3.13", "npm"):
+            (self.tools / name).write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            os.chmod(self.tools / name, 0o755)
+        (self.tools / "mynpm").symlink_to(self.tools / "npm")
+        (self.tools / "timeout").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        os.chmod(self.tools / "timeout", 0o755)
+
+    def env_with_tools(self) -> dict:
+        env = self.box.env()
+        env["PATH"] = f"{self.tools}{os.pathsep}{env.get('PATH', '')}"
+        return env
+
+    def trusted_line(self, command: str) -> str:
+        env = self.env_with_tools()
+        builders = self.box.builders({"name": "local", "command": command}, out="named.json")
+        proc = self.box.add(builders, "local", env=env)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        proc, _ = self.box.check(builders, env=env)
+        return proc.stdout.strip()
+
+    def test_a_versioned_interpreter_path_keys_the_script(self):
+        command = f"{self.tools}/python3.13 {self.SCRIPT}"
+        self.assertTrue(self.trusted_line(command).endswith("(trusted)"))
+        (self.box.repo / self.SCRIPT).write_text("print('changed')\n", encoding="utf-8")
+        _, names = self.box.check(self.box.builders({"name": "local", "command": command}, out="again.json"),
+                                  env=self.env_with_tools())
+        self.assertEqual(names, [], "a change to the script must ask again")
+
+    def test_a_link_to_a_task_runner_is_marked(self):
+        self.assertTrue(self.trusted_line("mynpm run build").endswith("(trusted, runs repo code)"))
+
+    def test_more_wrapper_option_forms_key_the_repo_file(self):
+        for command in ("env -u HOME bin/build", "timeout --kill-after 5 60 bin/build", "nice -5 bin/build"):
+            with self.subTest(command=command):
+                self.trusted_line(command)
+                (self.box.repo / "bin/build").write_text("#!/bin/sh\n# changed\n", encoding="utf-8")
+                _, names = self.box.check(self.box.builders({"name": "local", "command": command}, out="again.json"),
+                                          env=self.env_with_tools())
+                self.assertEqual(names, [], f"{command}: a change to bin/build must ask again")
+                (self.box.repo / "bin/build").write_text("#!/bin/sh\n", encoding="utf-8")
+
+
+class NotRegular(TrustTest):
+    def test_a_trust_file_fstat_reports_as_not_regular_is_refused(self):
+        import stat as stat_module
+        self.box.add(self.box.builders(LOCAL), "local")
+        module = trust_module()
+        real_fstat = os.fstat
+
+        def as_fifo(fd):
+            info = list(real_fstat(fd))
+            info[0] = stat_module.S_IFIFO | 0o600
+            return os.stat_result(info)
+
+        with mock.patch.object(module.os, "fstat", side_effect=as_fifo):
+            with self.assertRaises(module.Refused) as caught:
+                module.load(str(self.box.trust_file), (str(self.box.tmp / "unrelated"),))
+        self.assertIn("not a regular file", str(caught.exception))
+
+
+class FilePathKey(TrustTest):
+    def test_a_symlink_retargeted_to_an_identical_copy_asks_again(self):
+        repo = self.box.repo
+        (repo / "bin").mkdir()
+        for name in ("real-a", "real-b"):
+            (repo / "bin" / name).write_text("#!/bin/sh\necho same\n", encoding="utf-8")
+            os.chmod(repo / "bin" / name, 0o755)
+        (repo / "bin/linked").symlink_to("real-a")
+        builders = self.box.builders({"name": "local", "command": "./bin/linked"})
+        self.assertEqual(self.box.add(builders, "local").returncode, 0)
+        _, names = self.box.check(builders)
+        self.assertEqual(names, ["local"])
+        (repo / "bin/linked").unlink()
+        (repo / "bin/linked").symlink_to("real-b")
+        _, names = self.box.check(builders)
+        self.assertEqual(names, [], "the same bytes at another real path must ask again")
 
 
 if __name__ == "__main__":
