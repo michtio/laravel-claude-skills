@@ -2,7 +2,8 @@
 
 Acceptance criteria AC26 (gate commit first, the outside builder gets the brief file, the lock check and the
 checker run on its result) and AC28 (an outside builder that exits with an error: the build continues with the
-next builder named and says so in the report). Requirements R18, R26, R27.
+next builder named and says so in the report; stub-fail's commit and file are gone before stub-ok runs from
+the same brief). Requirements R18, R26, R27.
 Contract: tests/OutsideBuilders/CONTRACT.md, section "Release case". The case is data for the release runner
 (it runs a model); this file proves now that its facts hold against the skill and the docs, that its fixture
 is set up as the case says, and that its assertions accept a good report and reject each planted bad one.
@@ -31,6 +32,7 @@ CASE_ID = "gated-build-outside"
 STAND_IN_PEST = REPO / "evals/fixtures/builder/isolated-app/vendor/bin/pest"
 EXPECTED_BUILDERS = [
     {"name": "stub-unavailable", "command": "./bin/stub-unavailable", "timeout_minutes": 2},
+    {"name": "stub-fail", "command": "./bin/stub-fail", "timeout_minutes": 2},
     {"name": "stub-ok", "command": "./bin/stub-ok", "timeout_minutes": 5},
 ]
 # sample -> a substring of the failure it must produce
@@ -42,6 +44,9 @@ BAD_REPORTS = {
     "fail-checker-skipped.md": "skipped|not run",
     "fail-built-by-package-builder.md": "laravel-builder",
     "fail-builder-written-flow.md": "locked",
+    "fail-stub-fail-silent.md": "stub-fail",
+    "fail-stub-fail-commit-kept.md": r"\(stub-fail\)",
+    "fail-stub-fail-leftovers.md": "STUB-FAIL-PARTIAL",
 }
 
 
@@ -79,7 +84,7 @@ class ReleaseCase(unittest.TestCase):
         for name in case["expect_agents"] + case["forbid_agents"]:
             self.assertTrue(s8.agent_path(name).is_file(), f"{name} has no agent file")
         self.assertIn("laravel-gated-build skill", case["prompt"])
-        self.assertIn("`./bin/stub-unavailable` and `./bin/stub-ok`", case["prompt"])
+        self.assertIn("`./bin/stub-unavailable`, `./bin/stub-fail` and `./bin/stub-ok`", case["prompt"])
         for group in case["must_match"]:
             for pattern in group:
                 re.compile(pattern, re.I | re.S)
@@ -95,7 +100,7 @@ class ReleaseCase(unittest.TestCase):
         self.assertEqual(profile["gate_tests"], "locked")
         self.assertEqual(profile["builders"], EXPECTED_BUILDERS)
         stubs = sorted(p.name for p in (PROJECT / "bin").iterdir())
-        self.assertEqual(stubs, ["stub-bad-handback", "stub-ok", "stub-unavailable"])
+        self.assertEqual(stubs, ["stub-bad-handback", "stub-fail", "stub-ok", "stub-unavailable"])
         for name in stubs:
             mode = (PROJECT / "bin" / name).stat().st_mode
             self.assertTrue(mode & stat.S_IXUSR, f"bin/{name} is not executable")

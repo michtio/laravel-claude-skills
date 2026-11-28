@@ -128,6 +128,11 @@ class Fallback(unittest.TestCase):
         self.assertIn("git clean -fd", text)
         assert_line(self, text, r"before (each|every|the next) builder", label="the slice is reset before each builder")
 
+    def test_a_failed_builders_commits_and_files_are_removed_before_the_next(self):
+        assert_line(self, read_new(self, SKILL), r"git reset --hard", r"(<base>|base|gate commit)",
+                    label="git reset --hard back to the base (the gate commit), so a failed builder's commits go")
+        assert_line(self, read_new(self, SKILL), r"git clean -fd", label="git clean -fd removes a failed builder's untracked files")
+
     def test_the_package_builder_is_the_last_fallback(self):
         assert_line(self, read_new(self, SKILL), r"`?laravel-builder`?", r"same brief",
                     label="when every outside builder fails, laravel-builder builds the slice from the same brief")

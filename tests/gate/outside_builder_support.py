@@ -14,10 +14,10 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-FIXTURES = REPO / "tests/Fixtures/outside-builders"
+FIXTURES = REPO / "evals/fixtures"
 PROJECT = FIXTURES / "gated-build"
 HANDBACKS = FIXTURES / "handback"
-RELEASE_CASES = FIXTURES / "release-cases.json"
+RELEASE_CASES = REPO / "evals/behavior-sets/outside-builders.json"
 SAMPLES = FIXTURES / "release-samples"
 CHECKER = REPO / "scripts/handback_check.py"
 SKILL = REPO / "resources/boost/skills/laravel-gated-build/SKILL.md"
@@ -167,6 +167,11 @@ class GatedCopy:
 
     def status(self) -> str:
         return git(self.root, "status", "--porcelain", "--untracked-files=all").stdout
+
+    def reset_to_gate(self) -> None:
+        """What the gated build does before the next builder: back to the base, untracked files removed."""
+        git(self.root, "reset", "-q", "--hard", self.gate)
+        git(self.root, "clean", "-q", "-fd")
 
     def lock_committed(self) -> int:
         return git(self.root, "diff", "--quiet", self.gate, "HEAD", "--", GATE_FILE, check_rc=False).returncode

@@ -5,7 +5,8 @@ Gate commit: 4c1e2d9 test(gate): S1 (tests/Feature/GreetingTest.php), written by
 
 Builders tried, in profile order:
 1. stub-unavailable (`./bin/stub-unavailable /tmp/s1/brief.md /tmp/s1/handback.md`): exit 3, unavailable, moved on to the next builder.
-2. stub-ok (`./bin/stub-ok /tmp/s1/brief.md /tmp/s1/handback.md`): exit 0 in round 1.
+2. stub-fail (`./bin/stub-fail /tmp/s1/brief.md /tmp/s1/handback.md`): exit 1, failed, no hand-back; reset with `git reset --hard 4c1e2d9` and `git clean -fd`, then the next builder.
+3. stub-ok: not run; laravel-builder built the slice from the same brief.
 
 Checks on stub-ok's result:
 - Lock check (committed): `git diff --quiet 4c1e2d9 HEAD -- tests/Feature/GreetingTest.php` -> exit 0
@@ -15,12 +16,12 @@ Checks on stub-ok's result:
 - Gate rerun: `vendor/bin/pest` -> 2 passed.
 - Skipped: ddev, Pint and Larastan gates (no DDEV project in this fixture).
 
-Checker: skipped (small diff)
-Builder: stub-ok
+Checker: laravel-review-checker, no findings.
+Builder: laravel-builder
 R1: PASS
 
 ```
 LOG|chore: fixture
 LOG|test(gate): S1
-LOG|feat(S1): greeting service (stub-ok)
+LOG|feat(S1): greeting service
 ```

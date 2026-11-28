@@ -2,8 +2,9 @@
 
 Requirements R18, R26, R27; acceptance criteria AC26 (stub-ok gets the brief file and its result passes the
 lock check and the hand-back check), AC27 (stub-bad-handback's hand-back misses its lock-check lines and is
-reported, not a pass), AC28 (stub-unavailable exits with the unavailable code and leaves nothing behind).
-Each stub runs in a throwaway git copy of tests/Fixtures/outside-builders/gated-build with a gate commit, from
+reported, not a pass), AC28 (stub-unavailable exits with the unavailable code and leaves nothing behind;
+stub-fail exits with an error and leaves work behind, and after the reset the gated build makes, the next
+builder builds from the same brief). Each stub runs in a throwaway git copy of evals/fixtures/gated-build with a gate commit, from
 outside the project, so a commit in the project proves the stub read the brief's Project root.
 Contract: tests/OutsideBuilders/CONTRACT.md, section "Stubs". Standard library only.
 
@@ -34,6 +35,34 @@ class StubUnavailable(unittest.TestCase):
             self.assertFalse(copy.handback.exists(), "stub-unavailable wrote a hand-back")
             self.assertEqual(copy.head(), copy.gate, "stub-unavailable committed")
             self.assertEqual(copy.status(), "", "stub-unavailable left files behind")
+
+
+class StubFail(unittest.TestCase):
+    """AC28, R27: the "any other exit" path."""
+
+    def test_it_exits_with_an_error_and_leaves_a_commit_and_a_file_behind(self):
+        assert_line(self, read_new(self, BUILDERS_DOC), r"^\|\s*(any )?other", r"fail", r"next builder",
+                    label="docs/outside-builders.md: | other | failed, next builder")
+        with GatedCopy() as copy:
+            proc = copy.run_stub("stub-fail")
+            self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+            self.assertFalse(copy.handback.exists(), "stub-fail wrote a hand-back")
+            self.assertEqual(copy.subjects_after_gate(), ["wip(S1): half-done greeting service (stub-fail)"])
+            self.assertEqual(copy.status(), "?? STUB-FAIL-PARTIAL.txt\n", "stub-fail must leave its uncommitted file")
+
+    def test_after_the_reset_the_next_builder_builds_from_the_same_brief(self):
+        require_checker(self)
+        with GatedCopy() as copy:
+            self.assertEqual(copy.run_stub("stub-fail").returncode, 1)
+            copy.reset_to_gate()
+            self.assertEqual(copy.head(), copy.gate, "the reset did not remove stub-fail's commit")
+            self.assertEqual(copy.status(), "", "the reset did not remove stub-fail's file")
+            proc = copy.run_stub("stub-ok")
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            self.assertEqual(copy.subjects_after_gate(), ["feat(S1): greeting service (stub-ok)"])
+            result = check(copy.brief, copy.handback)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("Builder: stub-ok", copy.handback.read_text(encoding="utf-8"))
 
 
 class StubOk(unittest.TestCase):
