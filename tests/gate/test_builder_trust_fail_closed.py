@@ -5,8 +5,9 @@ scripts/run_builder.py runs a trusted command through `sh -c`, so the key has to
 Whatever the resolver cannot account for is refused, never trusted plain. Contract for
 `scripts/builder_trust.py`, beside tests/gate/test_builder_trust_resolution.py:
 
-- **Refused** (`add` exits 2 and writes nothing; `check` prints the plain line, or with --unattended
-  `Skipped: <name> (not confirmed)`):
+- **Refused** (`add` exits 2 and writes nothing; `check` prints `(cannot be trusted: <reason>)` after the line,
+  or with --unattended `Skipped: <name> (cannot be trusted: <reason>)`, amended for the S10b review round 3
+  ruling; reasons pinned in tests/gate/test_builder_trust_refusal_outcome.py):
   - **Shell syntax:** a command holding any of `;`, `&`, `|`, `<`, `>`, `(`, `)`, `$` or a backtick.
   - **Inline code** (whatever the payload, even a path outside the repository): `-c` after a shell or interpreter, including a combined short-flag group that contains
     `c` (`bash -lc`, `bash -cx`); `-c` for python, `-r` for php, `-e` for node.
@@ -66,13 +67,14 @@ class FailClosedTest(ResolutionTest):
                 (tools / name).chmod(0o755)
         return tools
 
-    def assert_refused(self, box: RepoBox, command: str, env: dict) -> None:
+    def assert_refused(self, box: RepoBox, command: str, env: dict, reason: str) -> None:
         builders = box.builders({"name": "local", "command": command})
         proc = box.add(builders, "local", env=env)
         self.assertEqual(proc.returncode, 2, f"{command}: " + proc.stdout + proc.stderr)
         self.assertFalse(box.trust_file.exists(), f"{command}: the trust file was written")
-        self.assertEqual(self.lines(box, builders, env, unattended=False), ([line("local", command)], []))
-        self.assertEqual(self.lines(box, builders, env), (["Skipped: local (not confirmed)"], []))
+        self.assertEqual(self.lines(box, builders, env, unattended=False),
+                         ([line("local", command) + f" (cannot be trusted: {reason})"], []))
+        self.assertEqual(self.lines(box, builders, env), ([f"Skipped: local (cannot be trusted: {reason})"], []))
 
     def assert_change_asks_again(self, box: RepoBox, command: str, rel: str, env: dict, mark: str = " (trusted)") -> None:
         builders = self.trust_it(box, command, env)
@@ -99,19 +101,19 @@ class Refused(FailClosedTest):
         for command in SHELL_SYNTAX:
             with self.subTest(command=command):
                 box = self.fresh()
-                self.assert_refused(box, command, self.env(box))
+                self.assert_refused(box, command, self.env(box), "shell syntax")
 
     def test_inline_code_cannot_be_trusted(self):
         for command in INLINE_CODE:
             with self.subTest(command=command):
                 box = self.fresh()
-                self.assert_refused(box, command, self.env(box))
+                self.assert_refused(box, command, self.env(box), "inline code")
 
     def test_env_changing_the_directory_cannot_be_trusted(self):
         for command in CHANGED_DIR:
             with self.subTest(command=command):
                 box = self.fresh()
-                self.assert_refused(box, command, self.env(box))
+                self.assert_refused(box, command, self.env(box), "env -C")
 
 
 class EveryRepoWordIsKeyed(FailClosedTest):
