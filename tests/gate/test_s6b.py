@@ -292,6 +292,11 @@ class PackageGateInDdev(unittest.TestCase):
             "        $this->assertFalse(filter_var(env('PAYMENTS_LIVE'), FILTER_VALIDATE_BOOLEAN));\n    }\n}\n"
         )
         (self.pkg / ".env").write_text("PAYMENTS_LIVE=true\n")
+        # Its own repository (gitleaks ruling 2026-11-28), so the gate's secret scan covers the fixture, not this pack's history.
+        ident = ["-c", "user.name=fixture", "-c", "user.email=fixture@example.com", "-c", "commit.gpgsign=false"]
+        subprocess.run(["git", "init", "-q"], cwd=self.pkg, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=self.pkg, check=True)
+        subprocess.run(["git", *ident, "commit", "-q", "-m", "chore: package fixture"], cwd=self.pkg, check=True)
 
     def tearDown(self):
         shutil.rmtree(self.pkg, ignore_errors=True)
