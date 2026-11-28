@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Michtio\LaravelClaudeSkills\Setup\Planners;
 
+use Michtio\LaravelClaudeSkills\Setup\DdevCliDatabaseSource;
 use Michtio\LaravelClaudeSkills\Setup\PlannedFile;
 use Michtio\LaravelClaudeSkills\Setup\Project;
 use Symfony\Component\Process\Process;
@@ -29,6 +30,10 @@ use Symfony\Component\Process\Process;
  *   package on the DDEV test database), a
  *   service container with the test database the PHPUnit pins name (the image of
  *   the DDEV database when `.ddev/config.yaml` exists, else the connection's);
+ * - extra services: each name in the profile's `laravel.ci_services` adds a
+ *   service container beside the database one, with its host and port in the job's
+ *   env (`redis`: the redis image, REDIS_HOST and REDIS_PORT), proven by
+ *   tests/Profile/CiServicesTest.php;
  * - gitleaks: installed from its release, checksum verified, because the secret
  *   scan step of `composer test` fails in CI without it.
  *
@@ -81,18 +86,28 @@ final class WorkflowPlanner implements Planner
         'postgres' => ['postgres', '17', 5432, 'postgres', 'postgres'],
     ];
 
+    /**
+     * Extra service containers: name => [image, port, health command, host env key, port env key].
+     * The redis tag is its latest major on Docker Hub, checked 2026-11-28.
+     */
+    private const SERVICES = [
+        'redis' => ['redis:8-alpine', 6379, 'redis-cli ping', 'REDIS_HOST', 'REDIS_PORT'],
+    ];
+
     // Public Methods
     // =========================================================================
 
     /**
-     * Take the profile's `laravel.ci` and `laravel.php_matrix` options.
+     * Take the profile's `laravel.ci`, `laravel.php_matrix` and `laravel.ci_services` options.
      *
      * @param string|list<string> $phpMatrix `auto`, or the PHP versions to test on.
+     * @param list<string> $services The extra service containers, names from SERVICES.
      * @author michtio
      */
     public function __construct(
         private readonly bool $ci,
         private readonly string|array $phpMatrix = 'auto',
+        private readonly array $services = [],
     ) {
     }
 
@@ -150,10 +165,16 @@ final class WorkflowPlanner implements Planner
             }
         }
 
+        $services = $this->services;
+        $env = [];
+
+        if ($database !== null || $services !== []) {
+            $lines[] = '    services:';
+        }
+
         if ($database !== null) {
             [$image, $port, $user, $password, $name] = $database;
             $kind = explode(':', $image)[0];
-            $lines[] = '    services:';
             $lines[] = '      database:';
             $lines[] = '        image: '.$image;
             $lines[] = '        env:';
@@ -180,11 +201,33 @@ final class WorkflowPlanner implements Planner
             $lines[] = '          --health-interval=5s';
             $lines[] = '          --health-timeout=5s';
             $lines[] = '          --health-retries=20';
+            $env = ['DB_HOST' => '127.0.0.1', 'DB_PORT' => (string) $port, 'DB_USERNAME' => $user, 'DB_PASSWORD' => $password];
+        }
+
+        foreach ($services as $service) {
+            [$image, $port, $health, $hostKey, $portKey] = self::SERVICES[$service];
+            array_push(
+                $lines,
+                '      '.$service.':',
+                '        image: '.$image,
+                '        ports:',
+                '          - '.$port.':'.$port,
+                '        options: >-',
+                '          --health-cmd="'.$health.'"',
+                '          --health-interval=5s',
+                '          --health-timeout=5s',
+                '          --health-retries=20',
+            );
+            $env[$hostKey] = '127.0.0.1';
+            $env[$portKey] = (string) $port;
+        }
+
+        if ($env !== []) {
             $lines[] = '    env:';
-            $lines[] = '      DB_HOST: 127.0.0.1';
-            $lines[] = '      DB_PORT: '.$port;
-            $lines[] = '      DB_USERNAME: '.$user;
-            $lines[] = '      DB_PASSWORD: '.$password;
+
+            foreach ($env as $key => $value) {
+                $lines[] = '      '.$key.': '.$value;
+            }
         }
 
         array_push(
@@ -346,11 +389,14 @@ final class WorkflowPlanner implements Planner
     }
 
     /**
-     * The database type and version of `.ddev/config.yaml` (DDEV's default, MariaDB
-     * 10.11, when the file sets none; for a package on the DDEV test database, the
-     * resolved type and version, so CI tests the engine and version the package
-     * tests on locally), or null without a DDEV config or for a type
-     * the workflow has no image for.
+     * The database type and version of `.ddev/config.yaml`; when the file does not
+     * name them in full, the ones the installed DDEV reports (resolved on the project
+     * for a package on the DDEV test database and for an app, so CI tests the engine
+     * and version the project runs locally; with no type and no answer from DDEV,
+     * DDEV's documented default, DdevCliDatabaseSource::DDEV_DEFAULT_DATABASE; with a
+     * type and no version, DDEV's documented version for mariadb, else the image's
+     * default version), or null without a DDEV config or for a type the
+     * workflow has no image for. Proven by tests/Profile/AppDdevDatabaseImageTest.php.
      *
      * @return array{0: string, 1: string}|null
      * @author michtio
@@ -361,13 +407,19 @@ final class WorkflowPlanner implements Planner
             return null;
         }
 
-        if ($project->ddevTestDatabase && $project->ddevDatabase !== null && isset(self::DATABASES[$project->ddevDatabase['type']])) {
+        if ($project->ddevDatabase !== null && isset(self::DATABASES[$project->ddevDatabase['type']])) {
             return [$project->ddevDatabase['type'], $project->ddevDatabase['version']];
         }
 
         $config = $project->ddevConfig();
         $database = is_array($config['database'] ?? null) ? $config['database'] : [];
-        $type = is_string($database['type'] ?? null) ? $database['type'] : 'mariadb';
+
+        // No type: the project runs DDEV's default, and DDEV could not be asked (else ddevDatabase is set).
+        if (! is_string($database['type'] ?? null)) {
+            return DdevCliDatabaseSource::DDEV_DEFAULT_DATABASE;
+        }
+
+        $type = $database['type'];
         $version = $database['version'] ?? null;
         $version = is_string($version) || is_int($version) || is_float($version) ? (string) $version : null;
 
@@ -376,7 +428,10 @@ final class WorkflowPlanner implements Planner
         }
 
         if ($version === null || preg_match('/^[0-9][0-9.]*$/', $version) !== 1) {
-            $version = isset($database['type']) ? self::DATABASES[$type][1] : '10.11';
+            // DDEV documents a default version for MariaDB only; mysql and postgres keep the image's default.
+            $version = $type === DdevCliDatabaseSource::DDEV_DEFAULT_DATABASE[0]
+                ? DdevCliDatabaseSource::DDEV_DEFAULT_DATABASE[1]
+                : self::DATABASES[$type][1];
         }
 
         return [$type, $version];

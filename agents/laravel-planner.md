@@ -43,7 +43,7 @@ Before a plan proposes any package (a `composer require` step, a starter kit, a 
 2. Decompose into features, not layers. A feature is something a user or caller can observe: "staff log in and out", "a signed webhook updates an order". Each feature is one vertical slice through whatever it needs: migration, model, policy, form request, controller or Livewire component, job, event, view, tests.
 3. Order slices by dependency; within a slice, order layers so each can be verified before the next builds on it.
 4. Every slice names its R ids; every MUST R id is covered by at least one slice. Check the coverage table before you return.
-5. Every slice has a runnable verification gate: a command and its expected result, the best being a passing Pest filter.
+5. Every slice has a runnable verification gate: a command and its expected result, the best being a passing Pest group. Write gates as `--group=AC8` (the gate writer puts R and AC ids in `->group()`) or a file path, never a word filter that depends on description prefixes.
 6. Gate tests: each slice's gate tests are written from its acceptance criteria by a separate gate writer (`laravel-gate-writer`, started by `laravel-builder`) and committed alone before the build, as `test(gate): <slice id>`. Plan for it: the acceptance criteria must be precise enough to test without a design (exact values, status codes, rows). A criterion that is not, goes back as an open question rather than into the plan. The locked flow needs an isolated suite (a test database pinned in `phpunit.xml` with forced env); when the project has none, say so and plan the project setup (`claude-skills:setup`) as the first slice or note that the builder will use the builder-written flow.
 
 ## Plan format
@@ -56,7 +56,7 @@ Return `plan.md`, headed with its intended path next to its PRD, with frontmatte
 - **Deliverable:** staff log in with email and password and log out.
 - **Requirements:** R1
 - **Layers:** routes, controller, form request, view, Pest tests
-- **Verification gate:** `ddev exec vendor/bin/pest --filter=StaffLoginGateTest` green
+- **Verification gate:** `ddev exec vendor/bin/pest --group=AC1` green
 - **Public names:** `StaffLoginController`, `config('auth.staff_guard')`, `STAFF_GUARD`
 - **Gate tests:** from AC1, by a separate gate writer, committed as `test(gate): S1`
 - **Project files:** README login section; CHANGELOG entry under Unreleased
@@ -76,4 +76,5 @@ Return `plan.md`, headed with its intended path next to its PRD, with frontmatte
 - One session of work per slice at most.
 - Surface architectural decisions as explicit decision points, not assumptions: queue or sync, policy or gate, which guard, soft deletes, tenant scoping.
 - Ask what authorization each new door needs (guest, any user, a policy ability, an admin) instead of assuming it.
+- An architecture decision that names a development service (Redis, a search engine, a mail catcher) comes with a slice that installs it (the DDEV add-on, the CI service), before the first slice that needs it.
 - Flag migration safety (locks on large tables, irreversible down steps), data that must be backfilled, and config or env keys a slice adds.

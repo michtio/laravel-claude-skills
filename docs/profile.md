@@ -20,7 +20,7 @@ php artisan claude-skills:setup
 
 In a Testbench package, run `vendor/bin/testbench claude-skills:setup` (or `ddev exec vendor/bin/testbench claude-skills:setup`).
 
-Every run first prints what it detected, then every effective option with its source, `(profile)` or `(default)`, for example `  runner: ddev (profile)` and `  test_pins: none (default)`, and the two Claude Code commands that install the agents (until `.claude/settings.json` enables the plugin). The setup then prints every change as a diff, every command it will run, and asks once. Options:
+Every run first prints what it detected, then every effective option with its source, `(profile)` or `(default)`, for example `  runner: ddev (profile)`, `  test_pins: none (default)` and `  ci_services: none (default)`, and the two Claude Code commands that install the agents (until `.claude/settings.json` enables the plugin). The setup then prints every change as a diff, every command it will run, and asks once. Options:
 
 - `--check`: exit 1 when anything would change (a file, a command, a pending extra step), 0 when nothing would. It never asks, never writes and never runs anything. Use it in CI or from a team tool. Under DDEV (`ddev artisan claude-skills:setup --check`), DDEV follows that expected exit 1 with its own red `Failed to execute command ... exit status 1` line: that is DDEV reporting the exit code, not a crash. The plan before it ends with `<N> changes planned.` (`1 change planned.` for one).
 - `--yes`: apply without asking.
@@ -90,7 +90,7 @@ An invalid profile is refused before anything is planned: the setup exits 1 with
 
 ## Laravel options
 
-Each option has a default; a value in the profile takes precedence over the default. With no profile, the setup prints `No profile found at .ai/skills-profile.json; using the defaults:` and lists every option. Any other key under `laravel` is kept, ignored and named in an `Ignoring unknown profile key` line.
+Each option has a default; a value in the profile takes precedence over the default. With no profile, the setup prints `No profile found at .ai/skills-profile.json; using the defaults:` and lists every option, `ci_services` included. Any other key under `laravel` is kept, ignored and named in an `Ignoring unknown profile key` line.
 
 | Option | Values | Default | Effect |
 |---|---|---|---|
@@ -102,6 +102,7 @@ Each option has a default; a value in the profile takes precedence over the defa
 | `test_database` | `auto`, `ddev` | `auto` | `ddev` gives a Testbench package on DDEV the test database an app on DDEV gets (see Test database below); for an app it changes nothing. `auto` keeps a package on in-memory sqlite. |
 | `php_matrix` | `auto`, or a list of `"X.Y"` strings | `auto` | The PHP versions the CI workflow tests on (see CI workflow below). |
 | `test_pins` | an object of pin name to value or `env` | `none` | Overrides single PHPUnit pins (see Test pins below). Isolation stays the default: every pin the profile does not name stays forced. |
+| `ci_services` | a list of service names: `redis` | `none` | Extra service containers for the CI workflow's gate job, beside the database (see CI workflow below). |
 
 An empty list, `"laravel": []` (what PHP's `json_encode` writes for an empty map), counts as no options set. Booleans must be JSON booleans and `phpstan_level` a JSON integer: `"false"`, `0`, `null` or `"8"` are refused.
 
@@ -224,7 +225,9 @@ parameters:
 
 With `"laravel": {"ci": true}` the setup writes `.github/workflows/claude-skills-gate.yml`, for an application or a Testbench package, whatever the runner. The workflow runs the same gate command as your machine, `composer test` (the script the setup writes), after `composer install`, on every push to the default branch and on every pull request, with read-only repository permissions. The default branch is the one origin's HEAD points to, else git's `init.defaultBranch`, else `main` (also `main` outside a git repository). A newer run cancels an older one for the same pull request; runs on the default branch always finish. It never runs Pint, PHPStan or the test runner on its own: the gate is the one command.
 
-It also installs gitleaks (checksum verified), which the secret scan of `composer test` needs in CI, and, for a suite that runs on MySQL, MariaDB or PostgreSQL (an application, or a package with `"test_database": "ddev"`), starts a database service with the test database.
+It also installs gitleaks (checksum verified), which the secret scan of `composer test` needs in CI, and, for a suite that runs on MySQL, MariaDB or PostgreSQL (an application, or a package with `"test_database": "ddev"`), starts a database service with the test database. On DDEV the service runs the engine and version of the `database:` block in `.ddev/config.yaml`; when the block is missing or names no version, the installed DDEV is asked which one it runs (`ddev describe -j`, `DDEV_DATABASE`, or the default `ddev config --help` prints). When DDEV cannot tell, the setup warns and uses DDEV's documented default (MariaDB 11.8) for a missing block or a mariadb block without a version, or the image's default version for a mysql or postgres block without one: add the block so CI tests the engine you run.
+
+Extra services follow `ci_services`: `"ci_services": ["redis"]` starts a Redis service (the `redis` image) in the gate job and sets `REDIS_HOST` and `REDIS_PORT` in its env, so a suite that needs Redis runs in CI without a hand edit of the workflow. Any other name is refused. It takes effect only with `"ci": true`. Changing the list plans only the workflow.
 
 The PHP versions follow `php_matrix`. A list runs the job once per version, as a matrix (`fail-fast: false`). With `auto`, the default, a package is tested on every PHP minor from the composer.json require.php floor (its lowest X.Y version) up to the latest the setup knows; the DDEV PHP version does not decide it. With `auto`, an application runs one version, the first of: `php_version` in `.ddev/config.yaml` (and its `config.*.yaml` overrides), `config.platform.php` in `composer.json`, the lowest version `require.php` allows, else 8.4, each reduced to X.Y. Changing the matrix plans only the workflow.
 
@@ -241,7 +244,7 @@ The setup owns the file like every file it writes: the plan shows it as a diff, 
 
 The profile is meant to be updated by a tool and the setup rerun to keep a repository current. A rerun applies only the difference:
 
-- Changing one option plans only what follows from it: `ci` and `php_matrix` plan only the workflow; `phpstan_level` plans only `phpstan.neon`; `test_pins` plans only the PHPUnit file; `test_database` plans the hook, the PHPUnit file and the workflow; `runner` plans only the runner-dependent files; `house_style` and `gate_tests` plan nothing.
+- Changing one option plans only what follows from it: `ci`, `php_matrix` and `ci_services` plan only the workflow; `phpstan_level` plans only `phpstan.neon`; `test_pins` plans only the PHPUnit file; `test_database` plans the hook, the PHPUnit file and the workflow; `runner` plans only the runner-dependent files; `house_style` and `gate_tests` plan nothing.
 - Rewriting the profile with the same meaning (keys reordered, other formatting, `managed_by` added) plans nothing.
 - A rerun on an unchanged project reports `No changes` and `claude-skills:setup --check` exits 0.
 

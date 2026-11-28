@@ -109,7 +109,7 @@ final class Profile
     /**
      * The Laravel options: runner, house_style, phpstan_level, monitoring, ci;
      * profile values merged over the defaults, in that order. The optional options
-     * (test_database, php_matrix, test_pins) follow, in that order, only when the
+     * (test_database, php_matrix, test_pins, ci_services) follow, in that order, only when the
      * profile sets them. Contract API (tests/Profile/CONTRACT.md), proven by
      * tests/Profile/ProfileVerdictsTest.php and tests/Profile/ProfileLevelTest.php.
      *
@@ -125,7 +125,7 @@ final class Profile
     /**
      * Every Laravel option with its effective value: laravel() plus the defaults of
      * the optional options the profile leaves out, always in the canonical order
-     * (the five of LARAVEL_DEFAULTS, then test_database, php_matrix, test_pins).
+     * (the five of LARAVEL_DEFAULTS, then test_database, php_matrix, test_pins, ci_services).
      *
      * @return array<string, mixed>
      * @author michtio
@@ -171,6 +171,20 @@ final class Profile
     public function verdicts(): array
     {
         return $this->verdicts;
+    }
+
+    /**
+     * The extra service containers of `laravel.ci_services` (effective(), empty by
+     * default), in profile order. Proven by tests/Profile/CiServicesTest.php.
+     *
+     * @return list<string>
+     * @author michtio
+     */
+    public function ciServices(): array
+    {
+        $services = $this->effective()['ci_services'];
+
+        return is_array($services) ? array_values(array_map('strval', $services)) : [];
     }
 
     /**

@@ -67,7 +67,7 @@ final class Project
 
     /**
      * The same project with the DDEV database resolved (type and version), for a
-     * package on the DDEV test database.
+     * package on the DDEV test database or an app's CI database image.
      *
      * @param array{type: string, version: string} $database
      * @author michtio
@@ -126,6 +126,31 @@ final class Project
         }
 
         return $read;
+    }
+
+    /**
+     * The database DDEV runs for an app whose `.ddev/config.yaml` does not name it in
+     * full (no block, or a type without a version), read from the installed DDEV;
+     * null when the block is complete, when the reader cannot tell, or when it reports
+     * another type than the block names. The CI workflow then uses it instead of an
+     * assumed default; proven by tests/Profile/AppDdevDatabaseImageTest.php.
+     *
+     * @return array{type: string, version: string}|null
+     * @author michtio
+     */
+    public function readAppDdevDatabase(DdevDatabaseSource $source): ?array
+    {
+        $block = $this->ddevConfig()['database'] ?? null;
+        $type = is_array($block) && is_string($block['type'] ?? null) && $block['type'] !== '' ? $block['type'] : null;
+        $version = is_array($block) ? ($block['version'] ?? null) : null;
+
+        if ($type !== null && (is_string($version) || is_int($version) || is_float($version)) && (string) $version !== '') {
+            return null;
+        }
+
+        $read = $source->read($this->root);
+
+        return $read !== null && ($type === null || $read['type'] === $type) ? $read : null;
     }
 
     /**

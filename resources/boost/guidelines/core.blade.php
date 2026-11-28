@@ -30,6 +30,8 @@ This project follows a house style on top of PSR-12 and Pint. It applies to ever
 - PHPDocs on every class and every method, including private methods, constructors and test helpers. The summary line says what it does and why; `@param` and `@return` are added where the native type says less than the docblock (array shapes, generics, collections), and `@throws` lists what callers must handle.
 - `@author` on classes and methods only, never on properties or constants. Use the author line the project already uses, the same in every file.
 - Section headers: group class members under comment headers with a `=========` rule line, in this order: Constants, Properties, Public Methods, Protected Methods, Private Methods. Leave out a section with no members.
+- Method chaining: never mix single-line and multi-line chaining in one chain. A chain that fits on one line stays on one line; otherwise put every call on its own line.
+- Naming: events are named by tense, after what happens (`UserRegistering` before, `UserRegistered` after); listeners are named by the action they take, with a `Listener` suffix (`SendWelcomeMailListener`).
 
 ```php
 <?php

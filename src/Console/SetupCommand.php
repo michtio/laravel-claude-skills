@@ -8,6 +8,7 @@ use Illuminate\Console\Command;
 use Michtio\LaravelClaudeSkills\Profile\Profile;
 use Michtio\LaravelClaudeSkills\Profile\ProfileException;
 use Michtio\LaravelClaudeSkills\Setup\Advisories;
+use Michtio\LaravelClaudeSkills\Setup\DdevCliDatabaseSource;
 use Michtio\LaravelClaudeSkills\Setup\DdevDatabaseSource;
 use Michtio\LaravelClaudeSkills\Setup\FileChange;
 use Michtio\LaravelClaudeSkills\Setup\GitFiles;
@@ -178,6 +179,22 @@ final class SetupCommand extends Command
             }
         }
 
+        // An app on DDEV that leaves its database to DDEV's default: CI follows the installed DDEV.
+        if (! $project->ddevTestDatabase && $options['ci'] === true && $project->usesDdev() && ! $project->usesMemoryDatabase()
+            && is_file($root.'/.ddev/config.yaml')) {
+            $read = $project->readAppDdevDatabase($this->laravel->make(DdevDatabaseSource::class));
+
+            if ($read !== null) {
+                $project = $project->withDdevDatabase($read);
+            } elseif (! $this->namesDdevDatabase($project)) {
+                $block = $project->ddevConfig()['database'] ?? null;
+                $type = is_array($block) && is_string($block['type'] ?? null) && $block['type'] !== '' ? $block['type'] : null;
+                $this->warn($type === null
+                    ? 'The installed DDEV could not say which database it runs, and .ddev/config.yaml names no database: the CI workflow uses DDEV\'s documented default, mariadb 11.8. Add a database: block with type and version to .ddev/config.yaml so CI tests the engine you run.'
+                    : 'The installed DDEV could not say which '.$type.' version it runs, and .ddev/config.yaml names '.$type.' without a version: the CI workflow uses '.($type === DdevCliDatabaseSource::DDEV_DEFAULT_DATABASE[0] ? 'DDEV\'s documented default, '.$type.' '.DdevCliDatabaseSource::DDEV_DEFAULT_DATABASE[1] : 'the image\'s default version').'. Add version: to the database: block in .ddev/config.yaml so CI tests the version you run.');
+            }
+        }
+
         $phpstan = new PhpstanPlanner((int) $options['phpstan_level'], $profile->sets('phpstan_level'));
 
         try {
@@ -278,6 +295,20 @@ final class SetupCommand extends Command
     // =========================================================================
 
     /**
+     * Whether `.ddev/config.yaml` names the database in full (type and version).
+     *
+     * @author michtio
+     */
+    private function namesDdevDatabase(Project $project): bool
+    {
+        $block = $project->ddevConfig()['database'] ?? null;
+        $version = is_array($block) ? ($block['version'] ?? null) : null;
+
+        return is_array($block) && is_string($block['type'] ?? null) && $block['type'] !== ''
+            && (is_string($version) || is_int($version) || is_float($version)) && (string) $version !== '';
+    }
+
+    /**
      * State where the options come from and list every effective option with its
      * source, `(profile)` or `(default)`, on every run. Unknown keys under `laravel`
      * are named, so a typo is not silent.
@@ -304,12 +335,17 @@ final class SetupCommand extends Command
 
     /**
      * An option's value as printed: booleans as true/false, a PHP matrix list joined
-     * by commas, the test pins as NAME=value (or `none`).
+     * by commas, the test pins as NAME=value (or `none`), the CI services joined by
+     * commas (or `none`).
      *
      * @author michtio
      */
     private function optionValue(string $key, mixed $value): string
     {
+        if ($key === 'ci_services' && $value === []) {
+            return 'none';
+        }
+
         if ($key === 'test_pins') {
             if (! is_array($value) || $value === []) {
                 return 'none';
@@ -417,7 +453,11 @@ final class SetupCommand extends Command
         }
 
         $planners[] = CreatedOnceFilePlanner::pest();
-        $planners[] = new WorkflowPlanner($options['ci'] === true, is_array($options['php_matrix']) ? array_values(array_map('strval', $options['php_matrix'])) : 'auto');
+        $planners[] = new WorkflowPlanner(
+            $options['ci'] === true,
+            is_array($options['php_matrix']) ? array_values(array_map('strval', $options['php_matrix'])) : 'auto',
+            $profile->ciServices(),
+        );
 
         return $planners;
     }
