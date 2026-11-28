@@ -15,7 +15,9 @@ code, so the run showed only an opaque artisan failure later. Contract:
 - **Loud start:** `ddev_lock.start(<app>)` registers the app under `FIXTURE_PROJECT` and starts it. When
   `ddev config` or `ddev start` exits nonzero it raises RuntimeError with the command and the ddev output.
   test_s5 FixtureAppIntegration and test_s6a RunnerGuidanceSurvivesBoostUpdate start the app with it, and
-  test_s6b's `ensure_registered` uses `FIXTURE_PROJECT`.
+  test_s6b's `ensure_registered` uses `FIXTURE_PROJECT`. An app whose config still names another project (the
+  old `lcs-fixture-app`) is unlisted under that name first (`ddev stop --unlist <old>`), since DDEV refuses a
+  second name for one project root.
 
 A fake `ddev` on PATH records every call, so no test here needs DDEV or touches fixtures/. Standard library only.
 
@@ -160,6 +162,18 @@ class LoudStart(unittest.TestCase):
                 ddev_lock.start(fake.app())
             self.assertIn(MARKER, str(caught.exception))
             self.assertIn(["config", f"--project-name={ddev_lock.FIXTURE_PROJECT}"], fake.calls())
+
+    def test_start_unlists_the_app_under_its_old_name_first(self):
+        with FakeDdev() as fake:
+            app = fake.app()
+            (app / ".ddev/config.yaml").write_text("name: lcs-fixture-app\ntype: laravel\n", encoding="utf-8")
+            ddev_lock.start(app)
+            self.assertEqual(fake.calls(), [["stop", "--unlist", "lcs-fixture-app"],
+                                            ["config", f"--project-name={ddev_lock.FIXTURE_PROJECT}"], ["start"]])
+            fake.log.write_text("", encoding="utf-8")
+            (app / ".ddev/config.yaml").write_text(f"name: {ddev_lock.FIXTURE_PROJECT}\ntype: laravel\n", encoding="utf-8")
+            ddev_lock.start(app)
+            self.assertEqual(fake.calls(), [["config", f"--project-name={ddev_lock.FIXTURE_PROJECT}"], ["start"]])
 
     def test_s6b_registers_the_per_checkout_project(self):
         import test_s6b
