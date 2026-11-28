@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Michtio\LaravelClaudeSkills\Setup\Planners;
 
+use Michtio\LaravelClaudeSkills\Setup\DdevCliDatabaseSource;
 use Michtio\LaravelClaudeSkills\Setup\PlannedFile;
 use Michtio\LaravelClaudeSkills\Setup\Project;
 use Symfony\Component\Process\Process;
@@ -391,8 +392,9 @@ final class WorkflowPlanner implements Planner
      * The database type and version of `.ddev/config.yaml`; when the file does not
      * name them in full, the ones the installed DDEV reports (resolved on the project
      * for a package on the DDEV test database and for an app, so CI tests the engine
-     * and version the project runs locally; else the image's default version, never
-     * an assumed old DDEV default), or null without a DDEV config or for a type the
+     * and version the project runs locally; with no type and no answer from DDEV,
+     * DDEV's documented default, DdevCliDatabaseSource::DDEV_DEFAULT_DATABASE; with a
+     * type and no version, the image's default version), or null without a DDEV config or for a type the
      * workflow has no image for. Proven by tests/Profile/AppDdevDatabaseImageTest.php.
      *
      * @return array{0: string, 1: string}|null
@@ -410,7 +412,13 @@ final class WorkflowPlanner implements Planner
 
         $config = $project->ddevConfig();
         $database = is_array($config['database'] ?? null) ? $config['database'] : [];
-        $type = is_string($database['type'] ?? null) ? $database['type'] : 'mariadb';
+
+        // No type: the project runs DDEV's default, and DDEV could not be asked (else ddevDatabase is set).
+        if (! is_string($database['type'] ?? null)) {
+            return DdevCliDatabaseSource::DDEV_DEFAULT_DATABASE;
+        }
+
+        $type = $database['type'];
         $version = $database['version'] ?? null;
         $version = is_string($version) || is_int($version) || is_float($version) ? (string) $version : null;
 

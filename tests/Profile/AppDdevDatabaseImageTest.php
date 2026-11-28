@@ -61,8 +61,8 @@ it('never assumes MariaDB 10.11 when the installed DDEV cannot be asked, and say
     [$code, $output] = $this->setupRun($dir, ['--yes' => true]);
 
     expect($code)->toBe(0)
-        ->and(appDdevImage($dir))->not->toBe('mariadb:10.11')
-        ->and($output)->toContain('database: block');
+        ->and(appDdevImage($dir))->toBe('mariadb:11.8')
+        ->and($output)->toContain('names no database');
 })->group('R11');
 
 it('does not ask DDEV when the app names its database in full', function () {
@@ -76,4 +76,18 @@ it('does not ask DDEV when the app names its database in full', function () {
 
     expect($code)->toBe(0)
         ->and(appDdevImage($dir))->toBe('mysql:8.0');
+})->group('R11');
+
+it('warns that the block names a type without a version when DDEV cannot be asked', function () {
+    $dir = appDdevProject($this);
+    $config = Yaml::parse((string) file_get_contents($dir.'/.ddev/config.yaml')) ?: [];
+    $config['database'] = ['type' => 'mysql'];
+    file_put_contents($dir.'/.ddev/config.yaml', Yaml::dump($config));
+    $this->fakeDdevDatabase(null);
+
+    [$code, $output] = $this->setupRun($dir, ['--yes' => true]);
+
+    expect($code)->toBe(0)
+        ->and(appDdevImage($dir))->toBe('mysql:8.4')
+        ->and($output)->toContain('names mysql without a version');
 })->group('R11');

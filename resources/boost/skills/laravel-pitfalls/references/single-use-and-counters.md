@@ -69,7 +69,7 @@ A marker-only design ("the token is used when its used-marker exists") passes tw
 - An index on the supersede predicate does not stop the deadlock: an UPDATE that matches no row still takes a gap lock, and concurrent inserts into that gap deadlock (error 1213, "Deadlock found when trying to get lock").
 - Select the live ids with a plain read, update by primary key only when there are any, then insert, as separate statements; or insert first and burn rows with a lower id.
 - Or retry on 1213: `DB::transaction($callback, attempts: 3)`. `DB::transaction()` retries a deadlock only when `attempts` is above 1, and the default is 1.
-- A NOT NULL `timestamp` column with no default gets `ON UPDATE CURRENT_TIMESTAMP` on MySQL 5.7 and on MariaDB before 10.10 (with `explicit_defaults_for_timestamp` off), so an expiry column moves on every update of the row: use `dateTime` for expiry columns.
+- A NOT NULL `timestamp` column with no default gets `ON UPDATE CURRENT_TIMESTAMP` on MySQL 5.7 and on MariaDB before 10.10 (with `explicit_defaults_for_timestamp` off), and only on the first TIMESTAMP column in the table, so an expiry column that is the table's first TIMESTAMP moves on every update of the row: use `dateTime` for expiry columns.
 
 ## How to test it
 

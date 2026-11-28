@@ -30,6 +30,15 @@ final class DdevCliDatabaseSource implements DdevDatabaseSource
      */
     public const TYPES = ['mariadb', 'mysql', 'postgres'];
 
+    /**
+     * DDEV's documented default database (type, version), for when the installed
+     * DDEV cannot be asked: "The default database type is MariaDB, and the default
+     * version is currently 11.8" (https://docs.ddev.com/en/stable/users/extend/database-types/,
+     * checked 2026-11-28; DDEV 1.25.0 moved it from 10.11). Proven by
+     * tests/Profile/AppDdevDatabaseImageTest.php.
+     */
+    public const DDEV_DEFAULT_DATABASE = ['mariadb', '11.8'];
+
     // Public Methods
     // =========================================================================
 

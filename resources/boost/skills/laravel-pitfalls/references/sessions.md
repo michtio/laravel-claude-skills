@@ -37,7 +37,7 @@ A per-route middleware that enforces state and records it when missing ("signed 
 
 `User::where('email', $input)` on MySQL matches under the column's collation. Laravel's default `utf8mb4_unicode_ci`, MySQL 8's `utf8mb4_0900_ai_ci` and `utf8mb4_general_ci` are case- and accent-insensitive collations; the PAD SPACE ones also ignore trailing spaces. `bob@exämple.com` finds `bob@example.com`.
 
-- After a lookup by address, mail the stored address (`$user->email`), never the input: Laravel's password broker mails `getEmailForPasswordReset()`, the stored one. Treat a row whose stored address differs from the normalized input as not found.
+- After a lookup by address, mail the stored address (`$user->email`), never the input: Laravel's reset notification is routed to the stored address (`routeNotificationForMail()`, by default the model's `email`), and `getEmailForPasswordReset()` fills the reset link. Treat a row whose stored address differs from the normalized input as not found.
 - Key throttles on the matched record's key as well as the input, or one account has unlimited throttle keys.
 - Compare identifiers that must match strictly (an origin, a token key, a case-sensitive code) in PHP with `hash_equals`, or give the column a binary collation (`->collation('utf8mb4_bin')`, MySQL only): a strict `where` on a `_ci` column is not strict.
 
@@ -56,7 +56,7 @@ A per-route middleware that enforces state and records it when missing ("signed 
 - `Passkeys::userModel()` drives the migration's foreign key (`foreignIdFor(Passkeys::userModel())`, default `App\Models\User`): set it before the migration runs.
 - Synced passkeys (platform password managers) report a signature counter of 0 on every use, so the counter check cannot catch a replay or a cloned credential.
 - Its actions store no challenge: the bundled routes keep the options in the session and pull them, but when your app calls the actions itself, single use of the options is your app's job.
-- Its passkey management routes use `password.confirm` by default (`passkeys.management_middleware`), with the global timeout of pitfall 2, and its events (`PasskeyVerified`, `PasskeyRegistered`) carry the full user model, so a queued listener serializes it (see [queued payloads](queued-payloads.md)).
+- Its passkey management routes use `password.confirm` by default (`passkeys.management_middleware`), with the global timeout of pitfall 2, and its events (`PasskeyVerified`, `PasskeyRegistered`) carry the user model with `SerializesModels`, so a queued listener carries only the class and key and reloads the user in the worker (see [queued payloads](queued-payloads.md)).
 
 ## How to test it
 

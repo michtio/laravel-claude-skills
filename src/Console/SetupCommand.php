@@ -186,7 +186,11 @@ final class SetupCommand extends Command
             if ($read !== null) {
                 $project = $project->withDdevDatabase($read);
             } elseif (! $this->namesDdevDatabase($project)) {
-                $this->warn('The installed DDEV could not say which database it runs, and .ddev/config.yaml names none: the CI workflow uses its default image. Add a database: block with type and version to .ddev/config.yaml so CI tests the engine you run.');
+                $block = $project->ddevConfig()['database'] ?? null;
+                $type = is_array($block) && is_string($block['type'] ?? null) && $block['type'] !== '' ? $block['type'] : null;
+                $this->warn($type === null
+                    ? 'The installed DDEV could not say which database it runs, and .ddev/config.yaml names no database: the CI workflow uses DDEV\'s documented default, mariadb 11.8. Add a database: block with type and version to .ddev/config.yaml so CI tests the engine you run.'
+                    : 'The installed DDEV could not say which '.$type.' version it runs, and .ddev/config.yaml names '.$type.' without a version: the CI workflow uses the image\'s default version. Add version: to the database: block in .ddev/config.yaml so CI tests the version you run.');
             }
         }
 
@@ -319,11 +323,6 @@ final class SetupCommand extends Command
         }
 
         foreach ($profile->effective() as $key => $value) {
-            // ci_services is listed only when the profile sets it (CiServicesValidationTest).
-            if ($key === 'ci_services' && ! $profile->sets($key)) {
-                continue;
-            }
-
             $source = $profile->sets($key) ? 'profile' : 'default';
             $this->line(OutputFormatter::escape('  '.$key.': '.$this->optionValue($key, $value).' ('.$source.')'));
         }
@@ -335,7 +334,8 @@ final class SetupCommand extends Command
 
     /**
      * An option's value as printed: booleans as true/false, a PHP matrix list joined
-     * by commas, the test pins as NAME=value (or `none`).
+     * by commas, the test pins as NAME=value (or `none`), the CI services joined by
+     * commas (or `none`).
      *
      * @author michtio
      */

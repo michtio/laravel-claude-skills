@@ -4,7 +4,7 @@ Gap: covered partly by Boost (laravel-best-practices, rules/events-notifications
 
 Boost says to queue slow notifications and to give notifiable models a preferred locale. It does not say what a queued payload holds once it leaves the request: the serialized models, the secrets in clear, or the locale the worker renders in. Every queued listener, job and notification is written to the queue backend (`jobs` on the database driver, Redis, SQS) and, when it fails, to `failed_jobs`.
 
-## Pitfall 1: a queued listener serializes the full user
+## Pitfall 1: a queued listener can serialize the full user
 
 An event that carries the user model is serialized into the payload of every queued listener on it. With `SerializesModels` on the event (Laravel's `Login` and `Registered` and the laravel/passkeys events use it) only the model's class and key travel, and the worker reloads the user, as it is then. Without it, PHP serializes the whole model with every attribute: a queued listener on a third-party event that does not use `SerializesModels` writes the user's password hash and remember token into the queue and `failed_jobs`, whatever `$hidden` says.
 
