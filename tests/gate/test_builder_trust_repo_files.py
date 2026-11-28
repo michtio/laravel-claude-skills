@@ -172,7 +172,8 @@ class RepoFileKey(RepoFileTest):
         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
         self.assertFalse(self.box.trust_file.exists())
         proc, names = self.box.check(builders)
-        self.assertEqual((proc.stdout.splitlines(), names), ([line("local", "./bin/missing --fast")], []))
+        self.assertEqual((proc.stdout.splitlines(), names),
+                         ([line("local", "./bin/missing --fast") + " (cannot be trusted: unresolvable)"], []))
 
     def test_an_entry_written_before_the_file_key_does_not_trust_a_repo_file_command(self):
         old = self.box.tmp / "old-scripts"
