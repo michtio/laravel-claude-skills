@@ -9,7 +9,8 @@ must ask again. Contract for `scripts/builder_trust.py`, beside tests/gate/test_
     a word as a path from the project root;
   - else, when the first word is an interpreter (`sh`, `bash`, `zsh`, `dash`, `python`, `python3`, `php`,
     `node`, `ruby`, `perl`), its first argument that does not start with `-` (`sh scripts/x.sh`,
-    `bash -e scripts/x.sh --fast`, `php artisan`);
+    `bash -e scripts/x.sh --fast`); `php artisan` and `python -m` are task runners instead (amended,
+    tests/gate/test_builder_trust_resolution.py);
   - joined to the project root without resolving symlinks, it counts when that path is inside the git
     top-level. The entry then also keys on the sha256 of the file's bytes, read through any symlink.
 - A changed byte, committed or not, or a retargeted in-repo symlink makes `check` print the plain line
@@ -45,7 +46,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from outside_builder_support import BUILDERS_DOC, REPO, assert_line, git, read_new  # noqa: E402
 from test_builder_trust import TRUST, Sandbox, TrustTest  # noqa: E402
 
-PRE_KEY_COMMIT = "b501057"  # the S10b build: its entries carry no file key
+PRE_KEY_COMMIT = "b5010572db91c7e59ea069dc20ed416df87cd9ed"  # the S10b build (b501057): its entries carry no file key
 SCRIPTS = {
     "bin/build": "#!/bin/sh\necho build\n",
     "scripts/x.sh": "#!/bin/sh\necho x\n",
@@ -64,7 +65,6 @@ REPO_FILE_COMMANDS = {
     "python3 scripts/x.py": "scripts/x.py",
     "php scripts/x.php": "scripts/x.php",
     "node scripts/x.js": "scripts/x.js",
-    "php artisan build": "artisan",
 }
 RUNNER_COMMANDS = ("make build", "make -C . build", "just build", "composer run build", "npm run build",
                    "npx builder", "pnpm build", "yarn build", "ddev exec bin/build")
@@ -180,7 +180,9 @@ class RepoFileKey(RepoFileTest):
         for name in ("builder_trust.py", "builders_check.py"):
             shown = subprocess.run(["git", "show", f"{PRE_KEY_COMMIT}:scripts/{name}"], cwd=REPO,
                                    capture_output=True, text=True)
-            self.assertEqual(shown.returncode, 0, shown.stderr)
+            self.assertEqual(shown.returncode, 0, f"git show {PRE_KEY_COMMIT} failed: this test reads the S10b build commit, "
+                             "so the checkout needs full history (actions/checkout fetch-depth: 0) and that commit merged "
+                             f"into the branch under test: {shown.stderr}")
             (old / name).write_text(shown.stdout, encoding="utf-8")
         command = "./bin/build --fast"
         builders = self.box.builders({"name": "local", "command": command})
