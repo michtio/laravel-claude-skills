@@ -68,7 +68,7 @@ REPO_FILE_COMMANDS = {
 }
 RUNNER_COMMANDS = ("make build", "make -C . build", "just build", "composer run build", "npm run build",
                    "npx builder", "pnpm build", "yarn build", "ddev exec bin/build")
-PLAIN_COMMANDS = ("run-local-builder --quiet", "printf ran > RAN.txt; :", "/usr/bin/true")
+PLAIN_COMMANDS = ("run-local-builder --quiet", "touch RAN.txt", "/usr/bin/true")
 PASSWORD = "hunter-two-password"
 USER = "bobthebuilder"
 
@@ -228,7 +228,7 @@ class OriginCredentials(RepoFileTest):
                            "token as the user": f"https://{PASSWORD}@example.com/acme/app.git"}.items():
             with self.subTest(origin=label):
                 git(self.box.repo, "remote", "set-url", "origin", url)
-                builders = self.box.builders({"name": "local", "command": "printf ran > RAN.txt; :"})
+                builders = self.box.builders({"name": "local", "command": "touch RAN.txt"})
                 out = self.outputs(builders)
                 stored = self.box.trust_file.read_text(encoding="utf-8")
                 self.assertIn("example.com/acme/app.git", stored)
@@ -239,7 +239,7 @@ class OriginCredentials(RepoFileTest):
 
     def test_a_rotated_password_keeps_the_trust(self):
         git(self.box.repo, "remote", "set-url", "origin", f"https://{USER}:{PASSWORD}@example.com/acme/app.git")
-        command = "printf ran > RAN.txt; :"
+        command = "touch RAN.txt"
         builders = self.trusted(self.box, command)
         git(self.box.repo, "remote", "set-url", "origin", f"https://{USER}:another-password@example.com/acme/app.git")
         self.still_trusted(self.box, builders, command)
