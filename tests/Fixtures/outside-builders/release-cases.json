@@ -1,0 +1,92 @@
+[
+ {
+  "id": "gated-build-outside",
+  "acs": [
+   "AC26",
+   "AC28"
+  ],
+  "note": "AC26 (R18, R26) and AC28 (R27). The fixture profile names two outside builders in order: stub-unavailable (exit 3, writes nothing), then stub-ok (builds the slice, commits and writes a valid hand-back). Expected: laravel-gate-writer commits test(gate): S1 first; stub-unavailable exits with an error and the build continues with the next builder named and says so; stub-ok gets the brief file (its commit exists only when it read the brief's Project root) and commits; both lock checks, the hand-back check and laravel-review-checker run on its result; the report names stub-ok as the builder. The main session runs the procedure from the laravel-gated-build skill, so Bash is open: the run happens in a throwaway git copy (copy_cwd). agents counts the gate writer, the checker and at most two re-checks = 4; laravel-builder must not start. The Pest stand-in is sh and runs no PHP (fixture CLAUDE.md). Builder cases run once.",
+  "cwd": "tests/Fixtures/outside-builders/gated-build",
+  "copy_cwd": true,
+  "tools": "Agent,Skill,Read,Grep,Glob,Edit,Write,Bash",
+  "max_turns": 40,
+  "timeout": 1800,
+  "runs": 1,
+  "expect_agents": [
+   "laravel-gate-writer",
+   "laravel-review-checker"
+  ],
+  "forbid_agents": [
+   "laravel-builder"
+  ],
+  "max_agents": 4,
+  "prompt": "Use the laravel-gated-build skill to build slice S1 of specs/2026-11-27-greeting/plan.md (R1, AC1 and AC2; both documents approved). The project's .ai/skills-profile.json names outside builders. There is no DDEV project and no Laravel install here: the Pest command in every brief is `vendor/bin/pest`, run from the project root (a small stand-in runner), so skip every ddev, Pint and Larastan gate and say so. git works. I have read the profile's builder commands and say yes to running exactly these: `./bin/stub-unavailable` and `./bin/stub-ok`. Do not stop to ask questions. When the run ends, run `git log --reverse --format='LOG|%s'` and `git status --short | sed 's/^/STATUS|/'` and paste both outputs, unprefixed lines included, in a code block after the final report. Reply with the report verbatim, never a summary of it.",
+  "must_match": [
+   [
+    "LOG\\|test\\(gate\\): S1[^\\n]*\\n(?:LOG\\|[^\\n]*\\n)*?LOG\\|feat\\(S1\\)[^\\n]*stub-ok"
+   ],
+   [
+    "Gate flow:?\\**:?\\s*locked"
+   ],
+   [
+    "stub-unavailable[^\\n]{0,300}(skipp|exit(?:ed|s)?(?: with)?(?: code| status)?\\s*3\\b|next builder|moved on)",
+    "(skipp|exit(?:ed|s)?(?: with)?(?: code| status)?\\s*3\\b)[^\\n]{0,200}stub-unavailable"
+   ],
+   [
+    "Builder:?\\**:?\\s*stub-ok"
+   ],
+   [
+    "Lock check[^\\n]{0,160}exit\\s*0"
+   ],
+   [
+    "(handback_check|hand-?back check)[^\\n]{0,200}(pass|exit\\s*0|exit code 0|\\bok\\b|accepted)"
+   ],
+   [
+    "Checker:?\\**:?\\s*\\S"
+   ]
+  ],
+  "must_not_match": [
+   "Checker:?\\**:?\\s*(skipped|not run)",
+   "Builder:?\\**:?\\s*laravel-builder",
+   "(handback_check|hand-?back check)[^\\n]{0,200}exit\\s*[12]\\b"
+  ],
+  "facts": [
+   {
+    "file": "resources/boost/skills/laravel-gated-build/SKILL.md",
+    "contains": [
+     "laravel-gate-writer",
+     "test\\(gate\\): <slice id>",
+     "skills-profile\\.json",
+     "<command> <brief-file> <handback-file>",
+     "handback_check\\.py",
+     "git diff --quiet <gate commit> HEAD -- <gate files>",
+     "git diff --quiet <gate commit> -- <gate files>",
+     "laravel-review-checker",
+     "laravel-builder",
+     "(?is)exit 3[^.]{0,200}next builder",
+     "timeout_minutes",
+     "git reset --hard",
+     "git clean -fd",
+     "Stop after 3 rounds",
+     "(?i)never (stop|stops|ends?) silently"
+    ]
+   },
+   {
+    "file": "docs/outside-builders.md",
+    "contains": [
+     "<command> <brief-file> <handback-file>",
+     "timeout_minutes",
+     "handback_check\\.py"
+    ]
+   },
+   {
+    "file": "docs/brief-format.md",
+    "contains": [
+     "Lock check \\(committed\\): exit",
+     "Lock check \\(working tree\\): exit",
+     "Commit your work before writing the hand-back"
+    ]
+   }
+  ]
+ }
+]

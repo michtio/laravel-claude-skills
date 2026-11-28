@@ -1,0 +1,63 @@
+#!/bin/sh
+# Stub outside builder: builds slice S1 like stub-ok, then writes a hand-back
+# that has the Gate flow, R and Builder lines but no lock-check line, and
+# exits 0. A gated build must report the missing line and not count it as a pass.
+# Call form: stub-bad-handback <brief-file> <handback-file>
+brief=$1
+handback=$2
+[ -r "$brief" ] && [ -n "$handback" ] || { echo "usage: stub-bad-handback <brief-file> <handback-file>" >&2; exit 2; }
+
+field() {
+    sed -n "s/^$1:[[:space:]]*//p" "$brief" | head -n 1 | tr -d '`' | sed 's/[[:space:]]*$//'
+}
+
+root=$(field 'Project root')
+gate=$(field 'Gate commit')
+files=$(field 'Gate files')
+pest=$(field 'Pest command')
+[ -n "$root" ] && cd "$root" || { echo "stub-bad-handback: bad Project root" >&2; exit 2; }
+
+mkdir -p app/Services
+cat > app/Services/GreetingService.php <<'PHP'
+<?php
+
+namespace App\Services;
+
+/**
+ * Builds greetings: greet('Ada') returns 'Hello, Ada!' and greet('') returns 'Hello, world!'.
+ */
+class GreetingService
+{
+    /**
+     * Returns a greeting for a name, or for the world when the name is empty.
+     */
+    public function greet(string $name): string
+    {
+        $name = trim($name);
+
+        return $name === '' ? 'Hello, world!' : 'Hello, '.$name.'!';
+    }
+}
+PHP
+git add app/Services/GreetingService.php
+git -c user.name=stub-bad-handback -c user.email=stub-bad-handback@example.com commit -q -m "feat(S1): greeting service (stub-bad-handback)"
+
+status=FAIL
+if [ -n "$pest" ] && sh -c "$pest" >/dev/null 2>&1; then
+    status=PASS
+elif [ -x vendor/bin/pest ] && vendor/bin/pest >/dev/null 2>&1; then
+    status=PASS
+fi
+
+{
+    if [ -n "$gate" ] && [ "$gate" != none ]; then
+        echo "Gate flow: locked ($gate)"
+    else
+        echo "Gate flow: builder-written (stub builder, no gate commit)"
+    fi
+    for n in $(sed -n 's/^## R\([0-9][0-9]*\).*/\1/p' "$brief"); do
+        echo "R$n: $status"
+    done
+    echo "Builder: stub-bad-handback"
+} > "$handback"
+exit 0
