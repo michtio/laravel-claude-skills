@@ -91,10 +91,10 @@ class OwnerAndMode(TrustTest):
 class Entries(TrustTest):
     def test_adding_a_changed_command_replaces_the_old_entry_of_that_name(self):
         self.box.add(self.box.builders(LOCAL), "local")
-        changed = {**LOCAL, "command": "printf ran > RAN-other.txt; :"}
+        changed = {**LOCAL, "command": "touch RAN-other.txt"}
         self.assertEqual(self.box.add(self.box.builders(changed, out="changed.json"), "local").returncode, 0)
         listed = self.box.trust("list", "--root", str(self.box.repo))
-        self.assertEqual(listed.stdout.splitlines(), ["local: printf ran > RAN-other.txt; : (timeout 30 min)"])
+        self.assertEqual(listed.stdout.splitlines(), ["local: touch RAN-other.txt (timeout 30 min)"])
         _, names = self.box.check(self.box.builders(LOCAL, out="old.json"))
         self.assertEqual(names, [], "the old command is no longer trusted")
 
@@ -188,13 +188,14 @@ class RepoCodeAtThePrompt(TrustTest):
                 _, names = self.box.check(builders)
                 self.assertEqual(names, ["local"])
 
-    def test_inline_shell_code_names_no_repo_file(self):
-        command = {"name": "local", "command": "bash -c 'printf ran > RAN.txt'"}
+    def test_inline_shell_code_cannot_be_trusted(self):
+        command = {"name": "local", "command": "bash -c 'touch RAN.txt'"}
         builders = self.box.builders(command)
-        self.assertEqual(self.box.add(builders, "local").returncode, 0)
+        self.assertEqual(self.box.add(builders, "local").returncode, 2)
+        self.assertFalse(self.box.trust_file.exists())
         proc, names = self.box.check(builders)
         self.assertEqual((proc.stdout.splitlines(), names),
-                         (["local: bash -c 'printf ran > RAN.txt' (timeout 30 min) (trusted)"], ["local"]))
+                         (["local: bash -c 'touch RAN.txt' (timeout 30 min)"], []))
 
 
 class Credentials(unittest.TestCase):
