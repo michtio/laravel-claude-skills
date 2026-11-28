@@ -27,7 +27,7 @@ Until the first tag (`1.0.0-beta.1`) the pack is not on Packagist. Require it fr
 }
 ```
 
-`composer.lock` pins the exact commit, so every clone and CI install the same one; `composer update michtio/laravel-claude-skills` moves it to the latest `main`. After the first release, require a version (`composer require --dev michtio/laravel-claude-skills`) and drop the repository block.
+`composer.lock` pins the exact commit, so every clone and CI install the same one; `composer update michtio/laravel-claude-skills` moves it to the latest `develop`. After the first release, require a version (`composer require --dev michtio/laravel-claude-skills`) and drop the repository block.
 
 ### Boost without prompts
 
