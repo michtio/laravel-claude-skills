@@ -91,3 +91,17 @@ it('warns that the block names a type without a version when DDEV cannot be aske
         ->and(appDdevImage($dir))->toBe('mysql:8.4')
         ->and($output)->toContain('names mysql without a version');
 })->group('R11');
+
+it('uses DDEV\'s documented MariaDB version for a mariadb block without a version when DDEV cannot be asked', function () {
+    $dir = appDdevProject($this);
+    $config = Yaml::parse((string) file_get_contents($dir.'/.ddev/config.yaml')) ?: [];
+    $config['database'] = ['type' => 'mariadb'];
+    file_put_contents($dir.'/.ddev/config.yaml', Yaml::dump($config));
+    $this->fakeDdevDatabase(null);
+
+    [$code, $output] = $this->setupRun($dir, ['--yes' => true]);
+
+    expect($code)->toBe(0)
+        ->and(appDdevImage($dir))->toBe('mariadb:11.8')
+        ->and($output)->toContain('names mariadb without a version');
+})->group('R11');

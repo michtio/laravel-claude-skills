@@ -8,6 +8,7 @@ use Illuminate\Console\Command;
 use Michtio\LaravelClaudeSkills\Profile\Profile;
 use Michtio\LaravelClaudeSkills\Profile\ProfileException;
 use Michtio\LaravelClaudeSkills\Setup\Advisories;
+use Michtio\LaravelClaudeSkills\Setup\DdevCliDatabaseSource;
 use Michtio\LaravelClaudeSkills\Setup\DdevDatabaseSource;
 use Michtio\LaravelClaudeSkills\Setup\FileChange;
 use Michtio\LaravelClaudeSkills\Setup\GitFiles;
@@ -190,7 +191,7 @@ final class SetupCommand extends Command
                 $type = is_array($block) && is_string($block['type'] ?? null) && $block['type'] !== '' ? $block['type'] : null;
                 $this->warn($type === null
                     ? 'The installed DDEV could not say which database it runs, and .ddev/config.yaml names no database: the CI workflow uses DDEV\'s documented default, mariadb 11.8. Add a database: block with type and version to .ddev/config.yaml so CI tests the engine you run.'
-                    : 'The installed DDEV could not say which '.$type.' version it runs, and .ddev/config.yaml names '.$type.' without a version: the CI workflow uses the image\'s default version. Add version: to the database: block in .ddev/config.yaml so CI tests the version you run.');
+                    : 'The installed DDEV could not say which '.$type.' version it runs, and .ddev/config.yaml names '.$type.' without a version: the CI workflow uses '.($type === DdevCliDatabaseSource::DDEV_DEFAULT_DATABASE[0] ? 'DDEV\'s documented default, '.$type.' '.DdevCliDatabaseSource::DDEV_DEFAULT_DATABASE[1] : 'the image\'s default version').'. Add version: to the database: block in .ddev/config.yaml so CI tests the version you run.');
             }
         }
 

@@ -394,7 +394,8 @@ final class WorkflowPlanner implements Planner
      * for a package on the DDEV test database and for an app, so CI tests the engine
      * and version the project runs locally; with no type and no answer from DDEV,
      * DDEV's documented default, DdevCliDatabaseSource::DDEV_DEFAULT_DATABASE; with a
-     * type and no version, the image's default version), or null without a DDEV config or for a type the
+     * type and no version, DDEV's documented version for mariadb, else the image's
+     * default version), or null without a DDEV config or for a type the
      * workflow has no image for. Proven by tests/Profile/AppDdevDatabaseImageTest.php.
      *
      * @return array{0: string, 1: string}|null
@@ -427,7 +428,10 @@ final class WorkflowPlanner implements Planner
         }
 
         if ($version === null || preg_match('/^[0-9][0-9.]*$/', $version) !== 1) {
-            $version = self::DATABASES[$type][1];
+            // DDEV documents a default version for MariaDB only; mysql and postgres keep the image's default.
+            $version = $type === DdevCliDatabaseSource::DDEV_DEFAULT_DATABASE[0]
+                ? DdevCliDatabaseSource::DDEV_DEFAULT_DATABASE[1]
+                : self::DATABASES[$type][1];
         }
 
         return [$type, $version];
