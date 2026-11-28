@@ -17,7 +17,8 @@ code, so the run showed only an opaque artisan failure later. Contract:
   test_s5 FixtureAppIntegration and test_s6a RunnerGuidanceSurvivesBoostUpdate start the app with it, and
   test_s6b's `ensure_registered` uses `FIXTURE_PROJECT`. An app whose config still names another project (the
   old `lcs-fixture-app`) is unlisted under that name first (`ddev stop --unlist <old>`), since DDEV refuses a
-  second name for one project root.
+  second name for one project root; only when `ddev describe -j <old>` places that project at this app
+  (`raw.approot`), and a failed unlist is logged on stderr (review round 1, ruling 8).
 
 A fake `ddev` on PATH records every call, so no test here needs DDEV or touches fixtures/. Standard library only.
 
@@ -48,6 +49,17 @@ if [ "$1" = start ] && [ -n "${FAKE_DDEV_FAIL_START:-}" ]; then
     echo "$FAKE_DDEV_FAIL_START" >&2
     exit 1
 fi
+if [ "$1" = describe ]; then
+    if [ -n "${FAKE_DDEV_DESCRIBE:-}" ]; then
+        printf '%s\n' "$FAKE_DDEV_DESCRIBE"
+    else
+        printf '%s\n' '{"level":"fatal","msg":"could not find requested project"}'
+    fi
+fi
+if [ "$1" = stop ] && [ -n "${FAKE_DDEV_FAIL_STOP:-}" ]; then
+    echo "$FAKE_DDEV_FAIL_STOP" >&2
+    exit 1
+fi
 exit 0
 """
 
@@ -59,8 +71,10 @@ def digest(path: Path) -> str:
 class FakeDdev:
     """A temp folder with a fake `ddev` first on PATH, for subprocesses and for code run in this process."""
 
-    def __init__(self, fail_start: bool = False):
+    def __init__(self, fail_start: bool = False, describe: str | None = None, fail_stop: bool = False):
         self.fail_start = fail_start
+        self.describe = describe
+        self.fail_stop = fail_stop
 
     def __enter__(self) -> "FakeDdev":
         self._tmp = tempfile.TemporaryDirectory()
@@ -74,6 +88,10 @@ class FakeDdev:
         values = {"PATH": f"{self.tmp / 'bin'}{os.pathsep}{os.environ.get('PATH', '')}", "FAKE_DDEV_LOG": str(self.log)}
         if self.fail_start:
             values["FAKE_DDEV_FAIL_START"] = MARKER
+        if self.describe is not None:
+            values["FAKE_DDEV_DESCRIBE"] = self.describe
+        if self.fail_stop:
+            values["FAKE_DDEV_FAIL_STOP"] = "FAKE-DDEV-STOP-BROKE"
         self._env = mock.patch.dict(os.environ, values)
         self._env.start()
         return self
@@ -163,17 +181,43 @@ class LoudStart(unittest.TestCase):
             self.assertIn(MARKER, str(caught.exception))
             self.assertIn(["config", f"--project-name={ddev_lock.FIXTURE_PROJECT}"], fake.calls())
 
-    def test_start_unlists_the_app_under_its_old_name_first(self):
-        with FakeDdev() as fake:
-            app = fake.app()
-            (app / ".ddev/config.yaml").write_text("name: lcs-fixture-app\ntype: laravel\n", encoding="utf-8")
-            ddev_lock.start(app)
-            self.assertEqual(fake.calls(), [["stop", "--unlist", "lcs-fixture-app"],
-                                            ["config", f"--project-name={ddev_lock.FIXTURE_PROJECT}"], ["start"]])
-            fake.log.write_text("", encoding="utf-8")
-            (app / ".ddev/config.yaml").write_text(f"name: {ddev_lock.FIXTURE_PROJECT}\ntype: laravel\n", encoding="utf-8")
-            ddev_lock.start(app)
-            self.assertEqual(fake.calls(), [["config", f"--project-name={ddev_lock.FIXTURE_PROJECT}"], ["start"]])
+    def run_start(self, approot: str | None, fail_stop: bool = False, name: str = "lcs-fixture-app") -> tuple:
+        """ddev_lock.start on an app whose config names `name`; `ddev describe -j` reports approot (None: unknown)."""
+        import contextlib
+        import io
+        import json as json_module
+        with tempfile.TemporaryDirectory() as raw:
+            app_dir = Path(raw).resolve() / "app"
+            describe = None if approot is None else json_module.dumps(
+                {"level": "info", "raw": {"name": "lcs-fixture-app", "approot": approot.replace("<app>", str(app_dir))}})
+            with FakeDdev(describe=describe, fail_stop=fail_stop) as fake:
+                (app_dir / ".ddev").mkdir(parents=True)
+                (app_dir / ".ddev/config.yaml").write_text(f"name: {name}\ntype: laravel\n", encoding="utf-8")
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    ddev_lock.start(app_dir)
+                return fake.calls(), err.getvalue()
+
+    def test_start_unlists_the_old_name_only_when_ddev_places_it_at_this_app(self):
+        unlist = ["stop", "--unlist", "lcs-fixture-app"]
+        tail = [["config", f"--project-name={ddev_lock.FIXTURE_PROJECT}"], ["start"]]
+        for label, approot, expect_unlist in (("approot is this app", "<app>", True),
+                                              ("approot is another checkout", "/elsewhere/fixtures/app", False),
+                                              ("ddev does not know the project", None, False)):
+            with self.subTest(case=label):
+                calls, _ = self.run_start(approot)
+                self.assertTrue(any(c[:1] == ["describe"] and "-j" in c and "lcs-fixture-app" in c for c in calls), calls)
+                self.assertEqual(unlist in calls, expect_unlist, calls)
+                self.assertEqual(calls[-2:], tail)
+        calls, _ = self.run_start("<app>", name=ddev_lock.FIXTURE_PROJECT)
+        self.assertEqual(calls, tail, "an app already under the per-checkout name is neither described nor unlisted")
+
+    def test_a_failed_unlist_is_logged_and_the_start_goes_on(self):
+        calls, err = self.run_start("<app>", fail_stop=True)
+        self.assertIn(["stop", "--unlist", "lcs-fixture-app"], calls)
+        self.assertIn("lcs-fixture-app", err)
+        self.assertIn("unlist", err)
+        self.assertEqual(calls[-1], ["start"])
 
     def test_s6b_registers_the_per_checkout_project(self):
         import test_s6b
