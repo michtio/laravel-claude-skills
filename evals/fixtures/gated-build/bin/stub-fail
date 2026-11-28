@@ -1,0 +1,17 @@
+#!/bin/sh
+# Stub outside builder: fails. It reads the brief's Project root, commits a
+# half-done change, leaves an uncommitted file behind and exits 1, without a
+# hand-back. The next builder only gets a clean slice if the caller resets the
+# tree first (git reset --hard <base>, git clean -fd).
+# Call form: stub-fail <brief-file> <handback-file>
+brief=$1
+[ -r "$brief" ] || { echo "usage: stub-fail <brief-file> <handback-file>" >&2; exit 2; }
+root=$(sed -n 's/^Project root:[[:space:]]*//p' "$brief" | head -n 1 | tr -d '`' | sed 's/[[:space:]]*$//')
+[ -n "$root" ] && cd "$root" || { echo "stub-fail: bad Project root" >&2; exit 2; }
+mkdir -p app/Services
+printf '<?php\n\n// half-done work by stub-fail\n' > app/Services/GreetingService.php
+git add app/Services/GreetingService.php
+git -c user.name=stub-fail -c user.email=stub-fail@example.com commit -q -m "wip(S1): half-done greeting service (stub-fail)"
+printf 'half-done work\n' > STUB-FAIL-PARTIAL.txt
+echo "stub-fail: giving up" >&2
+exit 1

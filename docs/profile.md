@@ -44,7 +44,7 @@ Some lines change nothing on disk and say what to do instead:
     "managed_by": {"tool": "team-tool", "version": "1.2.0"},
     "gate_tests": "locked",
     "builders": [
-        {"name": "local", "command": "run-local-builder --brief {brief}", "timeout_minutes": 30}
+        {"name": "local", "command": "run-local-builder", "timeout_minutes": 30}
     ],
     "setup": {
         "steps": [
@@ -82,11 +82,21 @@ An invalid profile is refused before anything is planned: the setup exits 1 with
 | `version` | integer, required | setup | The profile format version. Always `1`. |
 | `managed_by` | object | nobody (informational) | The tool that wrote the file: `managed_by.tool` and `managed_by.version`, both strings. |
 | `gate_tests` | `locked` or `builder-written` | agents | Who writes the gate tests of a slice: `locked`, a separate gate writer whose tests the builder cannot change, or `builder-written`. With no value, the builder uses `locked` when the test suite is isolated (`phpunit.xml` pins `DB_DATABASE` with `force="true"`). `locked` never applies to a suite that is not isolated: the builder then says `Gate flow: builder-written (no isolated suite)`. |
-| `builders` | list of objects | agents | Outside builders, tried in order. Each has a `name` (string), a `command` (string) and an optional `timeout_minutes` (a number above 0). |
+| `builders` | list of objects | agents | Outside builders, tried in order (see Outside builders below). Each has a `name` (string), a `command` (string) and an optional `timeout_minutes` (a number above 0; 30 when left out). A `name` must match `^[A-Za-z0-9._-]{1,64}$` (1 to 64 letters, digits, dots, underscores or hyphens): the setup refuses any other name as an invalid profile, and the gated build skips, and reports, a builder whose command holds a Unicode control, format or separator character (such as a newline, a right-to-left override or a zero-width space). |
 | `setup` | object | setup | Extra project setup. `setup.steps` is the list of extra steps (below). |
 | `verdicts` | object | agents | Package verdicts that take precedence over the package's register (below). |
 | `craft` | object | Craft pack | Craft pack keys, ignored here: `craft.answers` (`hosting`, a string; `passwordless`, a boolean; `dev_root`, a string) and `craft.choices` (`chrome_devtools_mcp` and `craft_mcp`, booleans). They are only checked against the schema. |
 | `laravel` | object | setup | The Laravel options (below). Ignored by the Craft pack. |
+
+## Outside builders
+
+`builders` names programs other than the package's own builder that can build a slice: a local AI, a script or a team tool. The `laravel-gated-build` skill runs a gated slice through them, in the order listed, and falls back to the package's builder, `laravel-builder`, when every one of them fails, is unavailable or times out.
+
+- `command` is called as `<command> <brief-file> <handback-file>`: the two paths are appended to the command, so the command holds no placeholder. It runs from the project root.
+- Exit 0 means done, exit 3 unavailable, any other exit failed; no exit within `timeout_minutes` counts as failed.
+- Before running any of them, the gated build prints each builder as `<name>: <command> (timeout <n> min)` and waits for your yes to that list. A request counts as the yes only when it names every command exactly as the profile has it. Without a yes, with a partial yes, or in an unattended run, no outside builder runs and `laravel-builder` builds the slice; the report says `Skipped: <name> (not confirmed)` for each.
+
+The full protocol (exit codes, the reset before each builder, the checks on the result) is in [outside-builders.md](outside-builders.md); the brief and hand-back formats are in [brief-format.md](brief-format.md). The setup itself never runs a builder.
 
 ## Laravel options
 

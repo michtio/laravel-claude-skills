@@ -100,7 +100,7 @@ A gated pull request (one that carries a `test(gate):` gate commit) merges with 
 
 ### Install with skills.sh
 
-The skills alone (`laravel-pitfalls` and `laravel-package-verdicts`) also install through [skills.sh](https://skills.sh), without Composer or Boost, for example in a project that does not run Boost or for another agent:
+The skills alone (`laravel-pitfalls`, `laravel-package-verdicts` and `laravel-gated-build`) also install through [skills.sh](https://skills.sh), without Composer or Boost, for example in a project that does not run Boost or for another agent:
 
 ```sh
 npx skills add michtio/laravel-claude-skills
@@ -139,3 +139,11 @@ A defect an agent finds is fixed in the slice (a finding, for the read-only agen
 Every hand-back and report ends with a `Learnings:` line in two kinds, gaps in the agent or skill rules and stack learnings with evidence, or `none`.
 
 Read-only agents never get Boost's `tinker` or `record-rule` tools; the agents use Boost's read-only tools (`search-docs`, `database-schema`, `last-error`, `read-log-entries`) where they replace guessing. `python3 scripts/agent_budget.py` checks each agent's startup budget, agent cap and tool rules: planners, reviewers, checkers and the gate writer start no agents, except `laravel-reviewer-deep`, which orchestrates its checkers under its `At most 5 agents per review` line.
+
+## Outside builders
+
+A slice can also be built by a program other than `laravel-builder`: a local AI, a script or a team tool. Name them under `builders` in `.ai/skills-profile.json` and ask Claude Code to build the slice with the `laravel-gated-build` skill. The gate writer still commits the gate first; each builder, in the profile's order, is called as `<command> <brief-file> <handback-file>`, gets the same brief and writes a hand-back; both lock checks, the hand-back check (`scripts/handback_check.py`), your own gate run and `laravel-review-checker` cover its result, with at most 3 rounds per builder. A builder that exits 3 (unavailable), fails or outlives its `timeout_minutes` hands over to the next one, and `laravel-builder` builds the slice from the same brief when none of them succeeds. The build never stops silently: the report names every builder tried and how it ended.
+
+The commands come from the repository, so the gated build prints each one as `<name>: <command> (timeout <n> min)` and runs none of them until you say yes to that list; a request that names every command exactly counts as the yes. Without it, or in an unattended run, `laravel-builder` builds the slice and the report says `Skipped: <name> (not confirmed)`. A builder whose name is not plain letters, digits, `.`, `_` and `-` (at most 64), or whose command holds a Unicode control, format or separator character, is skipped and reported. A builder that changes the test configuration (`phpunit.xml`, `phpunit.xml.dist`, `tests/Pest.php`, `tests/TestCase.php`, `.env`, `.env.testing`, `testbench.yaml`, `config/database.php` and the phpunit bootstrap file (unless it is under `vendor/`)) is disqualified before the gate runs on its code; a suite that is not isolated and wipes its database runs no builder at all, and a builder that adds such a test is disqualified.
+
+The protocol is in [docs/outside-builders.md](docs/outside-builders.md) and the brief and hand-back formats in [docs/brief-format.md](docs/brief-format.md), written for any builder, not only Claude.

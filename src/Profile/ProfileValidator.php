@@ -14,7 +14,7 @@ use stdClass;
  * the Craft pack ships, byte for byte): `version` is the integer 1; `managed_by`,
  * `setup`, `craft` and its `answers` and `choices` are objects; `gate_tests` is
  * `locked` or `builder-written`; `builders` and `setup.steps` are lists of objects
- * with string `name` and `command`. The schema leaves `laravel` and `verdicts` as
+ * with string `name` and `command`, and a builder `name` matches BUILDER_NAME in full. The schema leaves `laravel` and `verdicts` as
  * open objects, so their entries are checked here: the Laravel options (the five
  * of LARAVEL_DEFAULTS and the four of OPTIONAL_DEFAULTS) and the fields of each
  * verdict.
@@ -30,6 +30,13 @@ final class ProfileValidator
 {
     // Constants
     // =========================================================================
+
+    /**
+     * A builder name, matched in full (`\z`, so a trailing newline is refused): the
+     * schema's `^[A-Za-z0-9._-]{1,64}$`. A gated build passes the name on a shell line,
+     * so nothing else gets through (tests/Profile/BuilderNameValidationTest.php).
+     */
+    public const BUILDER_NAME = '/^[A-Za-z0-9._-]{1,64}\z/';
 
     /**
      * The Laravel options and their defaults, in the order they are stated.
@@ -276,6 +283,11 @@ final class ProfileValidator
                 if ($reason !== null) {
                     throw ProfileException::field($path.'.'.$key, $reason);
                 }
+            }
+
+            // Builders only (the flag that allows a timeout): their name reaches a shell line.
+            if ($timeout && preg_match(self::BUILDER_NAME, $item->name) !== 1) {
+                throw ProfileException::field($path.'.name', 'must be 1 to 64 letters, digits, dots, underscores or hyphens');
             }
 
             if ($timeout && property_exists($item, 'timeout_minutes')) {

@@ -30,7 +30,7 @@
         "type": "object",
         "required": ["name", "command"],
         "properties": {
-          "name": {"type": "string"},
+          "name": {"type": "string", "pattern": "^[A-Za-z0-9._-]{1,64}$"},
           "command": {"type": "string"},
           "timeout_minutes": {"type": "number", "exclusiveMinimum": 0}
         }

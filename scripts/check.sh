@@ -20,6 +20,8 @@
 #                  artisan command and config key the skills, guidelines and agents name exists in the
 #                  pinned laravel/framework; index in scripts/data/, refreshed with network
 #                  by scripts/refresh-laravel-data.sh, read here without it)
+#   hand-back      scripts/handback_check.py (an outside builder's hand-back has every
+#                  required line; docs/brief-format.md)
 # Each check must also FAIL on its bad fixture in evals/fixtures/; those negative
 # tests run here too, so a check that silently stops checking turns CI red.
 # Later slices append their gates.
@@ -115,6 +117,8 @@ trap 'rm -f "$log"; rm -rf "$deny_fixture"' EXIT
 printf 'placeholder-client-name\n' > "$deny_fixture/deny-list.txt"
 printf 'Built for Placeholder-Client-Name.\n' > "$deny_fixture/README.md"
 must_fail "deny-list self-test (published file names a deny-listed term)" "names a deny-listed term" python3 scripts/check_deny_list.py --root "$deny_fixture" --list "$deny_fixture/deny-list.txt"
+gate      "hand-back checker passes on evals/fixtures/handback/complete.md" python3 scripts/handback_check.py --brief evals/fixtures/handback/brief.md evals/fixtures/handback/complete.md
+must_fail "hand-back self-test (no working-tree lock line)" "missing line: Lock check (working tree)" python3 scripts/handback_check.py --brief evals/fixtures/handback/brief.md evals/fixtures/handback/missing-lock-line.md
 gate      "agent rules pass on evals/fixtures/valid" python3 scripts/agent_budget.py --root evals/fixtures/valid
 gate      "skill rules pass on evals/fixtures/valid" bash scripts/validate-skills.sh --root evals/fixtures/valid
 
